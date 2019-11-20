@@ -57,7 +57,7 @@ int main(int argc, char** argv){
 				//break;
 			}
 		}
-		printf("here?");
+		printf("chk");
 		if(readnum == -1){
 			perror("read");
 		}
