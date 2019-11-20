@@ -10,6 +10,7 @@
 char buf[BUFSIZE];
 int client_upload(int);
 int client_download(int);
+int client_cd(int);
 void error_handling(char*, char*);
 char root_cloud[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_client";
 int main(int argc, char** argv){
@@ -49,12 +50,19 @@ int main(int argc, char** argv){
 				printf("Upload complete !\n");
 		}
 		else if(!strcmp(buf, "download")){
-			if((result = client_download(fd_socket)) == -1){
+			if((result = client_cd(fd_socket)) == -1){
 				printf("Download error : check the file name\n");
 			}
 			else
 				printf("Download complete !\n");
 			
+		}
+		else if(!strcmp(buf, "cd")){
+			if((result = client_cd(fd_socket)) == -1){
+				printf("cd error : check the directory name\n");
+			}
+			else
+				printf("cd complete !\n");
 		}
 		else if(!strcmp(buf, "quit")){
 			printf("bye !\n");
@@ -67,7 +75,24 @@ int main(int argc, char** argv){
 	close(fd_socket);
 	return 0;
 }
-
+int client_cd(int fd_socket){
+	int chk;
+	char path[100];
+	memset(buf, 0x00, BUFSIZE);
+	printf("path to go : ");
+	scanf("%s", buf);
+	getchar();
+	send(fd_socket, buf,strlen(buf), 0);
+	read(fd_socket, &chk, BUFSIZE); // server success?
+	if(chk){
+		strcpy(path,"./");
+		strcat(path,buf);
+		strcat(path,"/");
+		chdir(path);
+		return 0;
+	}
+	return -1;
+}
 int client_upload(int fd_socket){
 	int fd_file, readnum;
 	memset(buf, 0x00, BUFSIZE);
