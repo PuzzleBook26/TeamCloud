@@ -1,0 +1,4 @@
+gcc -c XX.c
+gcc -c XX.c
+
+gcc XX.o XX.o -o filename
