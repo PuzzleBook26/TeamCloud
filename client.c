@@ -7,19 +7,15 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #define BUFSIZE 1024
-
-void error_handling(char* message);
+char buf[BUFSIZE];
+int client_upload(int);
+int client_download(int);
+int client_cd(int);
+void error_handling(char*, char*);
+char root_cloud[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_client";
 int main(int argc, char** argv){
-	int fd_sock;
-	int fd_source;
-	char file_buf[BUFSIZE];
-	int size = sizeof(file_buf);
-	char file_name[BUFSIZE];
-	
-	int readnum;
+	int fd_socket, result;
 	struct sockaddr_in serv_addr;
-	//char message[BUFSIZE];
-	int str_len;
 
 	if (argc != 3) {
 		printf("Usage : %s <IP> <port> \n", argv[0]);
@@ -27,48 +23,131 @@ int main(int argc, char** argv){
 	}
 
 	// socket() 
-	fd_sock = socket(PF_INET, SOCK_STREAM, 0);
-	if (fd_sock == -1)
-		error_handling("socket() error");
+	fd_socket = socket(PF_INET, SOCK_STREAM, 0);
+	if (fd_socket == -1)
+		error_handling("socket() error", "socket");
 	memset(&serv_addr, 0, sizeof(serv_addr));
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
 	serv_addr.sin_port = htons(atoi(argv[2]));
-
 	// connect()
-	if (connect(fd_sock, (struct sockaddr*) & serv_addr, sizeof(serv_addr)) == -1)
-		error_handling("connect() error");
-	while (1) {
-		printf("file name :");
-		scanf("%s", file_name);
-		printf(" --> %s\n", file_name);
-		//memset(file_name, 0x00, BUFSIZE);
+	if (connect(fd_socket, (struct sockaddr*) & serv_addr, sizeof(serv_addr)) == -1)
+		error_handling("connect() error", "connect");
 
-		if((fd_source = open(file_name, O_RDONLY)) == -1){
-			perror("open");
-		}
-		send(fd_sock, file_name,strlen(file_name), 0);
-		//memset(file_name, 0x00, BUFSIZE);
-		while((readnum = read(fd_source, file_buf, BUFSIZE)) > 0){
-			if(write(fd_sock, file_buf, readnum) != readnum){
-				printf("<<write?>>\n");
-				perror("write");
-				//break;
+	printf("Cloud Sync ...\n");
+
+	while (1) {
+		printf("type command (upload, dowonload, ,remove, ls, cd, pwd, quit) : ");
+		scanf("%s", buf);
+		send(fd_socket, buf,strlen(buf), 0); // which command? to server
+		getchar();
+		if(!strcmp(buf,"upload")){
+			if((result = client_upload(fd_socket)) == -1){
+				printf("Upload error : check the file name\n");
 			}
+			else
+				printf("Upload complete !\n");
 		}
-		printf("here?");
-		if(readnum == -1){
-			perror("read");
+		else if(!strcmp(buf, "download")){
+			if((result = client_cd(fd_socket)) == -1){
+				printf("Download error : check the file name\n");
+			}
+			else
+				printf("Download complete !\n");
+			
 		}
-		close(fd_source);	
+		else if(!strcmp(buf, "cd")){
+			if((result = client_cd(fd_socket)) == -1){
+				printf("cd error : check the directory name\n");
+			}
+			else
+				printf("cd complete !\n");
+		}
+		else if(!strcmp(buf, "quit")){
+			printf("bye !\n");
+			break;
+		}
+		else{
+			printf("Invalid command\n");
+		}
 	}
-	close(fd_sock);
+	close(fd_socket);
 	return 0;
 }
-void error_handling(char* message){
+int client_cd(int fd_socket){
+	int chk;
+	char path[100];
+	memset(buf, 0x00, BUFSIZE);
+	printf("path to go : ");
+	scanf("%s", buf);
+	getchar();
+	send(fd_socket, buf,strlen(buf), 0);
+	read(fd_socket, &chk, BUFSIZE); // server success?
+	if(chk){
+		strcpy(path,"./");
+		strcat(path,buf);
+		strcat(path,"/");
+		chdir(path);
+		return 0;
+	}
+	return -1;
+}
+int client_upload(int fd_socket){
+	int fd_file, readnum;
+	memset(buf, 0x00, BUFSIZE);
+	printf("file to upload : ");
+	scanf("%s", buf);
+	printf("uploading ...  : %s\n", buf);
+	if((fd_file = open(buf, O_RDONLY)) == -1){
+		perror("open");
+		return -1;
+		
+	}
+	send(fd_socket, buf,strlen(buf), 0);
+	memset(buf, 0x00, BUFSIZE);
+	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
+		if(write(fd_socket, buf, readnum) != readnum){
+			perror("write");
+			return -1;
+		}
+	}
+	if(readnum == -1){
+		perror("read");
+		return -1;
+	}
+	close(fd_file);
+	return 0;
+}
+int client_download(int fd_socket){
+	int fd_file, readnum;
+	memset(buf, 0x00, BUFSIZE);
+	printf("file to download : ");
+	scanf("%s", buf);
+	printf("downloading ... : %s\n", buf);
+	if((fd_file = open(buf, O_RDWR | O_CREAT,0644)) == -1){
+		perror("open");
+		return -1;
+	}
+	send(fd_socket, buf,strlen(buf), 0);
+	memset(buf, 0x00, BUFSIZE);
+	while((readnum= read(fd_socket, buf, BUFSIZE)) > 0 ){
+        	if((write(fd_file, buf, readnum)) != readnum){
+           		perror("write");
+			return -1;
+		}
+	if(readnum == -1){
+		perror("read");
+		return -1;
+	}
+	close(fd_file);
+	return 0;
 
-	fputs(message, stderr);
-	fputc('\n', stderr);
+    }
+	
+}
+void error_handling(char* s1, char* s2){
+	fprintf(stderr, "Error : %s ", s1);
+	perror(s2);
 	exit(1);
 }
