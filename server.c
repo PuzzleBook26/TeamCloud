@@ -18,7 +18,7 @@ char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_server/";
 char buf[BUFSIZE];
 void error_handling(char *message);
 int server_download(int);
-//int server_upload(int);
+int server_upload(int);
 int server_cd(int);
 int server_pwd(int);
 int server_ls(int);
@@ -92,14 +92,14 @@ int main(int argc, char **argv)
 		else
 			printf("Upload complete !\n");
 	}
-	//else if(!strcmp(buf, "download")){
-	//	if((result = server_upload(clnt_sock)) == -1){
-	//		printf("Download error : check the file name\n");
-	//	}
-	//	else
-	//		printf("Download complete !\n");
+	else if(!strcmp(buf, "download")){
+		if((result = server_upload(clnt_sock)) == -1){
+			printf("Download error : check the file name\n");
+		}
+		else
+			printf("Download complete !\n");
 			
-	//}
+	}
 	else if(!strcmp(buf, "ls")){
 		if((result = server_ls(clnt_sock)) == -1){
 			printf("ls error\n");
@@ -244,42 +244,83 @@ int server_pwd(int fd_socket){
 	
 }
 int server_download(int fd_socket){
-	int fd_file, readnum, size;
+	int fd_file, readnum, size, result;
 	//struct stat info;
 	mode_t st_mode;
 	memset(buf, 0, BUFSIZE);
 	read(fd_socket, &size, sizeof(int));
 	read(fd_socket, buf, size);
-	printf("download from client : %s", buf);
+	printf("download from client : %s\n", buf);
 	printf("downloading ... : %s\n", buf);
 	//strcpy(filename, buf);
    	//memset(buf, 0, BUFSIZE);
+	read(fd_socket, &result, sizeof(int));
+	if(result == -1)
+		return -1;
 	read(fd_socket, &st_mode, sizeof(st_mode));
+	printf("stmode :%d\n", st_mode);
 	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){
 		perror("open");
 		return -1;
 	}
 	memset(buf, 0, BUFSIZE);
 	while(1){
+		memset(buf, 0, BUFSIZE);
 		read(fd_socket, &size, sizeof(int));
-		if(size == 0) break;
+		printf("<<size : %d >>\n", size);
+		if(size == 0){
+			printf("here?\n");
+			break;
+		}
 		readnum= read(fd_socket, buf, size);
         	if((write(fd_file, buf, readnum)) != readnum){
            		perror("write");
 			return -1;
 		}
-	if(readnum == -1){
-		perror("read");
-		return -1;
+		if(readnum == -1){
+			perror("read");
+			return -1;
+		}
 	}
 	close(fd_file);
 	return 0;
 
-    }
+    
 	
 }
 int server_upload(int fd_socket){
-	
+	int fd_file, readnum, size, result;
+	struct stat info;
+	memset(buf, 0, BUFSIZE);
+
+	read(fd_socket, &size, sizeof(int));
+	read(fd_socket, buf, size);
+	printf("uploading ...  : %s\n", buf);
+	if((fd_file = open(buf, O_RDONLY)) == -1){
+		result = -1;
+		write(fd_socket, &result, sizeof(int));
+		perror("open");
+		return -1;
+	}
+	stat(buf, &info);
+	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
+	memset(buf, 0, BUFSIZE);
+	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
+		write(fd_socket, &readnum, sizeof(int));
+		if(write(fd_socket, buf, readnum) != readnum){
+			perror("write");
+			return -1;
+		}
+		memset(buf, 0, BUFSIZE);
+	}
+	if(readnum == -1){
+		perror("read");
+		return -1;
+	}
+	readnum = 0;
+	write(fd_socket, &readnum, sizeof(int));
+	close(fd_file);
+	return 0;
 }
 int server_cd(int fd_socket){
 	memset(buf, 0, BUFSIZE);

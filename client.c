@@ -170,30 +170,33 @@ int client_cd(int fd_socket){
 		return -1;
 }
 int client_upload(int fd_socket){
-	int fd_file, readnum, size;
+	int fd_file, readnum, size, result;
 	struct stat info;
 	memset(buf, 0, BUFSIZE);
 	printf("file to upload : ");
 	scanf("%s", buf);
+	getchar();
 	size = strlen(buf);
 	write(fd_socket, &size, sizeof(int));
+	write(fd_socket, buf, strlen(buf));
 	printf("uploading ...  : %s\n", buf);
 	if((fd_file = open(buf, O_RDONLY)) == -1){
+		result = -1;
+		write(fd_socket, &result, sizeof(int));
 		perror("open");
 		return -1;
 		
 	}
-	write(fd_socket, buf, strlen(buf));
 	stat(buf, &info);
 	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
-		memset(buf, 0, BUFSIZE);
 		write(fd_socket, &readnum, sizeof(int));
 		if(write(fd_socket, buf, readnum) != readnum){
 			perror("write");
 			return -1;
 		}
+		memset(buf, 0, BUFSIZE);
 	}
 	if(readnum == -1){
 		perror("read");
@@ -205,31 +208,45 @@ int client_upload(int fd_socket){
 	return 0;
 }
 int client_download(int fd_socket){
-	int fd_file, readnum;
+	int fd_file, readnum, size, result;
+	mode_t st_mode;
 	memset(buf, 0, BUFSIZE);
 	printf("file to download : ");
 	scanf("%s", buf);
-	printf("downloading ... : %s\n", buf);
-	write(fd_socket, buf,strlen(buf));
-	if((fd_file = open(buf, O_RDWR | O_CREAT,0644)) == -1){
+	getchar();
+	size = strlen(buf);
+	write(fd_socket, &size, sizeof(int));
+	write(fd_socket, buf, strlen(buf));
+	read(fd_socket, &result, sizeof(int));
+	if(result == -1)
+		return -1;
+	read(fd_socket, &st_mode, sizeof(st_mode));
+	printf("stmode :%d\n", st_mode);
+	printf("filename :%s\n", buf);
+	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){
 		perror("open");
 		return -1;
 	}
-	//send(fd_socket, buf,strlen(buf), 0);
 	memset(buf, 0, BUFSIZE);
-	while((readnum= read(fd_socket, buf, BUFSIZE)) > 0 ){
+	while(1){
+		memset(buf, 0, BUFSIZE);
+		read(fd_socket, &size, sizeof(int));
+		printf("<<size : %d >>\n", size);
+		if(size == 0) break;
+		readnum= read(fd_socket, buf, size);
         	if((write(fd_file, buf, readnum)) != readnum){
            		perror("write");
 			return -1;
 		}
-	if(readnum == -1){
-		perror("read");
-		return -1;
+		if(readnum == -1){
+			perror("read");
+			return -1;
+		}
 	}
 	close(fd_file);
 	return 0;
 
-    }
+   
 	
 }
 void error_handling(char* s1, char* s2){
