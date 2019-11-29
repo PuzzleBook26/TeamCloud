@@ -107,7 +107,7 @@ int client_rm(int fd_socket){
 	len = strlen(buf);
 
 	write(fd_socket, &len, sizeof(int));
-	write(fd_socket, buf, len);
+	write(fd_socket, buf, len);         // server에게 삭제할 파일의 이름을 전송 
 	read(fd_socket, &result, sizeof(int));
 	printf("%s : 삭제 완료\n", buf);
 	return result;
@@ -119,7 +119,7 @@ int client_ls(int fd_socket){
 	printf("----------현재 파일 목록----------\n");
 
 	while(1){
-		read(fd_socket, &len, sizeof(int));
+		read(fd_socket, &len, sizeof(int));  // server로부터 ls | sort output을 받아 print
 		if(len == 0) break;
 		readnum = read(fd_socket, buf, len);
 		printf("%s\n", buf);
