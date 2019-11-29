@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
@@ -11,10 +12,14 @@
 #include <sys/stat.h>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
+#include <wait.h>
 
 
 #define BUFSIZE 1024
+#define BACKLOG 10
 char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_server/";
+
 char buf[BUFSIZE];
 void error_handling(char *message);
 int server_download(int);
@@ -23,125 +28,160 @@ int server_cd(int);
 int server_pwd(int);
 int server_ls(int);
 int server_rm(char*, int);
-int main(int argc, char **argv)
-{
 
-    int clnt_sock;
-    int serv_sock;
-    int len;
-    int result;
-    int write_len;
-    void *buf_ptr;
-    char location[50] = "/home/kyj0609/sysprac/TeamCloud/cloud_server/";
-    char filename[50];
-    char command[100];
+void sig_child(int signal) {
+	pid_t pid;
+	int stat;
+	while ((pid = waitpid(-1, &stat, WNOHANG)) > 0);
+	return;
+}
+int main(int argc, char** argv){
 
-    int in_fd, out_fd, n_char;
+	int client_socket;
+	int listen_socket;
+	int len;
+	int result;
+	int write_len;
+	void* buf_ptr;
+	
+	char filename[50];
+	char command[100];
+	pid_t pid;
+	
+	signal(SIGCHLD, sig_child);
 
-    struct sockaddr_in serv_addr;
-    struct sockaddr_in clnt_addr;
-    int clnt_addr_size;
+	int in_fd, out_fd, n_char;
 
-
-    if(argc != 2) {
-        printf("Usage : %s <port>\n", argv[0]);
-        exit(1);
-    }
-
-
-    serv_sock = socket(PF_INET, SOCK_STREAM, 0);
-    if(serv_sock == -1)
-        error_handling("socket() error");
+	struct sockaddr_in serv_addr;
+	struct sockaddr_in clnt_addr;
+	socklen_t clnt_addr_size;
 
 
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr.sin_port = htons(atoi(argv[1]));
-
-
-    if( bind(serv_sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr) )==-1)
-        error_handling("bind() error");
-
-
-    if(listen(serv_sock, 5) == -1)
-        error_handling("listen() error");
-
-    printf("client listen!!\n");
-    clnt_addr_size = sizeof(clnt_addr);
-
-    clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
-    if(clnt_sock == -1)
-        error_handling("accept() error");
-
-
-    printf("Client Accept!!\n");
-    memset(buf, 0x00, BUFSIZE);
-    printf("Cloud Sync ...\n");
-
-    while (1) {
-	memset(buf, 0, BUFSIZE);
-	printf("wait for command ... \n");
-	read(clnt_sock, buf, BUFSIZE); // command from client , which command?
-	printf("%s command accepted\n", buf);
-
-	if(!strcmp(buf,"upload")){
-		if((result = server_download(clnt_sock)) == -1){
-			printf("Upload error : check the file name\n");
-		}
-		else
-			printf("Upload complete !\n");
+	if (argc != 2) {
+		printf("Usage : %s <port>\n", argv[0]);
+		exit(1);
 	}
-	else if(!strcmp(buf, "download")){
-		if((result = server_upload(clnt_sock)) == -1){
-			printf("Download error : check the file name\n");
+
+
+	listen_socket = socket(PF_INET, SOCK_STREAM, 0);
+	if (listen_socket == -1)
+		error_handling("socket() error");
+
+
+	memset(&serv_addr, 0, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	serv_addr.sin_port = htons(atoi(argv[1]));
+
+
+	if (bind(listen_socket, (struct sockaddr*) & serv_addr, sizeof(serv_addr)) == -1)
+		error_handling("bind() error");
+
+
+	if (listen(listen_socket, BACKLOG) == -1)
+		error_handling("listen() error");
+
+	printf("클라이언트 연결 요청 대기 중...\n");
+	// 서버에서 여러 Client를 관리하기 위한 Concurrent Server
+	while (1) {
+		clnt_addr_size = sizeof(clnt_addr);
+
+		client_socket = accept(listen_socket, (struct sockaddr*) & clnt_addr, &clnt_addr_size);
+		if (client_socket == -1)
+			error_handling("accept() error");
+		else{
+			printf("새로운 클라이언트 연결 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
 		}
-		else
-			printf("Download complete !\n");
+		// 새로운 Client 접속시 fork()를 호출하여 각 Client마다 Child process Server를 만들어준다.
+		// 생성된 Child Server가 각 Client의 접속을 관리하게 된다.
+		pid = fork(); 
+		if (pid == -1) {
+			close(client_socket);
+			perror("fork");
+
+		}
+		if (pid == 0) {
+			close(listen_socket);
+			memset(buf, 0, BUFSIZE);
+			printf("Cloud Sync ...\n");
+
+			while (1) { // Client에서의 명령어 요청 대기.
+				memset(buf, 0, BUFSIZE);
+				printf("wait for command ... \n");
+				read(client_socket, buf, BUFSIZE); // command from client , which command?
+				printf("%s command accepted\n", buf);
+
+				if (!strcmp(buf, "upload")) {
+					if ((result = server_download(client_socket)) == -1) {
+						printf("Upload error : check the file name\n");
+					}
+					else
+						printf("Upload complete !\n");
+				}
+				else if (!strcmp(buf, "download")) {
+					if ((result = server_upload(client_socket)) == -1) {
+						printf("Download error : check the file name\n");
+					}
+					else
+						printf("Download complete !\n");
+
+				}
+				else if (!strcmp(buf, "ls")) {
+					if ((result = server_ls(client_socket)) == -1) {
+						printf("ls error\n");
+					}
+					else
+						printf("ls complete !\n");
+				}
+				else if (!strcmp(buf, "pwd")) {
+					getcwd(buf, BUFSIZE);
+					write(client_socket, buf, strlen(buf));
+				}
+				else if (!strcmp(buf, "cd")) {
+					if ((result = server_cd(client_socket)) == -1) {
+						printf("cd error : check the directory name\n");
+					}
+					else
+						printf("cd complete !\n");
+				}
+				else if (!strcmp(buf, "remove")) {
+					memset(buf, 0, BUFSIZE);
+					read(client_socket, &len, sizeof(int));
+					read(client_socket, buf, BUFSIZE);
+					printf("%s\n", buf);
+					if ((result = server_rm(buf, client_socket)) == -1) {
+						write(client_socket, &result, sizeof(int));
+						printf("remove error : check the directory name\n");
+					}
+					else {
+						write(client_socket, &result, sizeof(int));
+						printf("remove complete : %s\n", buf);
+					}
+				}
+				else if (!strcmp(buf, "quit")) {
+					printf("bye !\n");
+					break;
+				}
+				else {
+					printf("Invalid command\n");
+				}
+			}
+			printf("클라이언트 연결 해제 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
+			close(client_socket);
+			exit(0);
+		}
+		else {
 			
-	}
-	else if(!strcmp(buf, "ls")){
-		if((result = server_ls(clnt_sock)) == -1){
-			printf("ls error\n");
+			close(client_socket);
 		}
-		else
-			printf("ls complete !\n");
+	
 	}
-	else if(!strcmp(buf, "pwd")){
-		getcwd(buf, BUFSIZE);
-		write(clnt_sock, buf, strlen(buf));
-	}
-	else if(!strcmp(buf, "cd")){
-		if((result = server_cd(clnt_sock)) == -1){
-			printf("cd error : check the directory name\n");
-		}
-		else
-			printf("cd complete !\n");
-	}
-	else if(!strcmp(buf, "remove")){
-		memset(buf, 0, BUFSIZE);
-		read(clnt_sock, &len, sizeof(int));
-		read(clnt_sock, buf, BUFSIZE);
-		printf("%s\n", buf);
-		if((result = server_rm(buf, clnt_sock)) == -1){
-			write(clnt_sock, &result, sizeof(int)); 
-			printf("remove error : check the directory name\n");		
-		}
-		else{	
-			write(clnt_sock, &result, sizeof(int));
-			printf("remove complete : %s\n", buf);
-		}
-	}
-	else if(!strcmp(buf, "quit")){
-		printf("bye !\n");
-		break;
-	}
-	else{
-		printf("Invalid command\n");
-	}
+	printf("server close\n");
+	close(listen_socket);
+	return 0;
 }
-	close(clnt_sock);
-}
+
+
 int server_rm(char* filename, int fd_socket){
 	struct stat info;
 	DIR* dir_ptr;
@@ -335,5 +375,4 @@ int server_cd(int fd_socket){
 void error_handling(char *message)
 {
     fprintf(stderr, "Error is %s :: %s", message, strerror(errno));
-    exit(1);
 }

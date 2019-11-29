@@ -43,33 +43,29 @@ int main(int argc, char** argv){
 
 	printf("Cloud Sync ...\n");
 
-	while (1) {
+	while (1) {  // client main
 		memset(buf, 0, BUFSIZE);
-		printf("type command (upload, download, remove, ls, cd, pwd, quit) : ");
+		printf("\n명령어 입력 (upload, download, remove, ls, cd, pwd, quit) : ");
 		scanf("%s", buf);
 		getchar();
 		write(fd_socket, buf,strlen(buf)); // which command? to server
 		//getchar();
-		printf("command : <<%s>>\n",buf);
 		if(!strcmp(buf,"upload")){
 			if((result = client_upload(fd_socket)) == -1){
-				printf("Upload error : Check the file name\n");
+				printf("업로드 실패 - 존재하지 않는 파일 이름입니다.\n");
 			}
-			else
-				printf("Upload complete !\n");
 		}
+
 		else if(!strcmp(buf, "download")){
 			if((result = client_download(fd_socket)) == -1){
-				printf("Download error : Check the file name\n");
+				printf("다운로드 실패 - 존재하지 않는 파일 이름입니다.\n");
 			}
-			else
-				printf("Download complete !\n");
-			
+
 		}
 		else if(!strcmp(buf, "pwd")){
 			read(fd_socket, buf, BUFSIZE);
-			printf("Current path of the Cloud Directory :%s\n", buf);
-		}
+			printf("----------현재 작업 경로----------\n %s\n", buf);
+		} 
 		else if(!strcmp(buf, "ls")){
 			if((result = client_ls(fd_socket)) == -1){
 				printf("ls error\n");
@@ -77,64 +73,53 @@ int main(int argc, char** argv){
 		}
 		else if(!strcmp(buf, "remove")){
 			if((result = client_rm(fd_socket)) == -1){
-				printf("rm error : check the directory name\n");
+				printf("삭제 실패 - 존재하지 않는 파일 또는 디렉토리 이름입니다.\n");
 			}
-			else
-				printf("rm complete !\n");
 		}
+
 		else if(!strcmp(buf, "cd")){
 			if((result = client_cd(fd_socket)) == -1){
-				printf("cd error : check the directory name\n");
+				printf("경로 이동 실패 - 존재하지 않는 경로입니다.\n");
 			}
-			else
-				printf("cd complete !\n");
 		}
 		else if(!strcmp(buf, "quit")){
-			printf("bye !\n");
+			printf("서버와의 연결 종료\n");
 			break;
 		}
 		else{
-			printf("Invalid command\n");
+			printf("잘못된 명령어 입력\n");
 		}
 	}
+
 	close(fd_socket);
 	return 0;
 }
-int client_rm(int fd_socket){
-	int len, result;
-	printf("remove file name : ");
+
+
+
+int client_rm(int fd_socket){ 
+	int len;
+	int result;
+	printf("삭제할 파일 또는 디렉토리 이름 : ");
 	scanf("%s", buf);
 	len = strlen(buf);
+
 	write(fd_socket, &len, sizeof(int));
 	write(fd_socket, buf, len);
 	read(fd_socket, &result, sizeof(int));
+
 	return result;
 }
 int client_ls(int fd_socket){
 	int readnum;
 	int len;
-	//while(1){
-	//	//read(fd_socket, &size, sizeof(int));
-	//	readnum = read(fd_socket, &len, sizeof(int));
-	//	if(len == 0) return 0;
-	//	readnum = recv(fd_socket, buf, len, 0);
-	//	printf("reanum : %d\n", readnum);
-	//	printf("%s\n", buf);
-	//	
-	//	if(readnum == 0)
-	//		return 0;
-	//	else if(readnum == -1)
-	//		return -1;
-	//	//memset(buf, 0, BUFSIZE);
-	//}
-	//read(fd_socket, &size, sizeof(int));
+	
+	printf("----------현재 파일 목록----------\n");
 
 	while(1){
 		read(fd_socket, &len, sizeof(int));
 		if(len == 0) break;
 		readnum = read(fd_socket, buf, len);
-		//printf("<%d>\n", readnum);
-		//printf("<%d>\n", strlen(buf));
 		printf("%s\n", buf);
 		memset(buf, 0, BUFSIZE);
 	}
@@ -142,54 +127,51 @@ int client_ls(int fd_socket){
 		perror("read");
 		return -1;
 	}
+
+	printf("---------------------------------\n");
 	return 0;
 
-	//memset(buf, 0, BUFSIZE);
-	//int readnum, len, fd_file;
-	//char* file;
-	//recv(fd_socket, &len, sizeof(int), 0);
-	//file = malloc(len);
-	//recv(fd_socket, file, len, 0);
-	//fd_file = creat("ls.txt", O_WRONLY);
-	//write(fd_file, file, len);
-	//close(fd_file);
-	//printf("--The Remote Directory List--\n");
-	//system("cat ls.txt");	
+	
         
 }
 int client_cd(int fd_socket){
 	memset(buf, 0, BUFSIZE);
-	printf("path to go : ");
+	printf("이동할 경로 : ");
 	scanf("%s", buf);
 	getchar();
 	write(fd_socket, buf,strlen(buf));
-	printf("path = %s\n", buf);	
+	
 	if(chdir(buf) == 0)
 		return 0;
 	else
 		return -1;
 }
 int client_upload(int fd_socket){
-	int fd_file, readnum, size, result;
+	int fd_file;
+	int readnum;
+	int size, result=0;
+	char filename[100];
+	
 	struct stat info;
 	memset(buf, 0, BUFSIZE);
-	printf("file to upload : ");
-	scanf("%s", buf);
+	printf("업로드 할 파일 : ");
+	scanf("%s", filename);
 	getchar();
-	size = strlen(buf);
+	size = strlen(filename);
 	write(fd_socket, &size, sizeof(int));
-	write(fd_socket, buf, strlen(buf));
-	printf("uploading ...  : %s\n", buf);
-	if((fd_file = open(buf, O_RDONLY)) == -1){
+	write(fd_socket, filename, strlen(filename));
+
+	if((fd_file = open(filename, O_RDONLY)) == -1){
 		result = -1;
 		write(fd_socket, &result, sizeof(int));
-		perror("open");
 		return -1;
 		
 	}
-	stat(buf, &info);
+	printf("%s : 업로드 중  ...\n", filename);
+	stat(filename, &info);
 	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
+
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
 		write(fd_socket, &readnum, sizeof(int));
 		if(write(fd_socket, buf, readnum) != readnum){
@@ -198,36 +180,42 @@ int client_upload(int fd_socket){
 		}
 		memset(buf, 0, BUFSIZE);
 	}
+
 	if(readnum == -1){
 		perror("read");
 		return -1;
 	}
+
 	readnum = 0;
 	write(fd_socket, &readnum, sizeof(int));
 	close(fd_file);
+	printf("%s : 업로드 완료 \n", filename);
+	
 	return 0;
 }
 int client_download(int fd_socket){
-	int fd_file, readnum, size, result;
+	int fd_file, readnum, size, result=0;
+	char filename[100];
 	mode_t st_mode;
 	memset(buf, 0, BUFSIZE);
-	printf("file to download : ");
-	scanf("%s", buf);
+	printf("다운로드 할 파일 : ");
+	scanf("%s", filename);
 	getchar();
-	size = strlen(buf);
+	size = strlen(filename);
 	write(fd_socket, &size, sizeof(int));
-	write(fd_socket, buf, strlen(buf));
+	write(fd_socket, filename, strlen(filename));
 	read(fd_socket, &result, sizeof(int));
+
 	if(result == -1)
 		return -1;
+
 	read(fd_socket, &st_mode, sizeof(st_mode));
-	printf("stmode :%d\n", st_mode);
-	printf("filename :%s\n", buf);
-	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){
-		perror("open");
+	if((fd_file = open(filename, O_RDWR | O_CREAT, st_mode )) == -1){
 		return -1;
 	}
+	printf("%s : 다운로드 중  ...\n", filename);
 	memset(buf, 0, BUFSIZE);
+	
 	while(1){
 		memset(buf, 0, BUFSIZE);
 		read(fd_socket, &size, sizeof(int));
@@ -244,6 +232,8 @@ int client_download(int fd_socket){
 		}
 	}
 	close(fd_file);
+
+	printf("%s : 다운로드 완료\n", filename);
 	return 0;
 
    
