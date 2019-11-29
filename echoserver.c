@@ -11,8 +11,8 @@
 
 static int count = 0;
 
-char *root = "/home/puzzlebook/";
-char *username = "Server";
+char *root = "/home/puzzlebook/Server";
+char *username = "Client";
 
 int main(int argc, char **argv){
     int serv_sock;
@@ -53,7 +53,7 @@ int main(int argc, char **argv){
     printf("connection is good\n");
 
     chdir(root);
-    sync_recv(client_sock, username);
+    sync_recv(client_sock);
 
     
     close(client_sock);       /* 연결 종료 */
