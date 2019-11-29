@@ -54,6 +54,7 @@ int main(int argc, char** argv){
 	
 	char filename[50];
 	char command[100];
+	char path[100];
 	pid_t pid;
 	
 	signal(SIGCHLD, sig_child);
@@ -94,7 +95,7 @@ int main(int argc, char** argv){
 	while (1) {
 		clnt_addr_size = sizeof(clnt_addr);
 
-		client_socket = accept(listen_socket, (struct sockaddr*) & clnt_addr, &clnt_addr_size);
+		client_socket = accept(listen_socket, (struct sockaddr*) & clnt_addr, &clnt_addr_size); // client socket 생
 		if (client_socket == -1)
 			error_handling("accept() error");
 		else{
@@ -113,10 +114,10 @@ int main(int argc, char** argv){
 			memset(buf, 0, BUFSIZE);
 			printf("Cloud Sync ...\n");
 
-			while (1) { // Client에서의 명령어 요청 대기.
+			while (1) { // Client에서의 명령어 요청 대성기.
 				memset(buf, 0, BUFSIZE);
 				printf("\nwait for command ... \n");
-				read(client_socket, buf, BUFSIZE); // command from client , which command?
+				read(client_socket, buf, BUFSIZE); // client가 입력한 명령을 받아옴.
 				printf("%s command accepted .\n", buf);
 
 				if (!strcmp(buf, "upload")) {
@@ -158,8 +159,12 @@ int main(int argc, char** argv){
 					read(client_socket, &len, sizeof(int));
 					read(client_socket, buf, BUFSIZE);
 					printf("%s\n", buf);
+					getcwd(path, 100);
+					strcat(path, "/");
+					strcat(path, buf);
+				
 
-					if ((result = server_rm(buf, client_socket)) == -1) {
+					if ((result = server_rm(path, client_socket)) == -1) {
 						write(client_socket, &result, sizeof(int));
 						printf("remove error - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
@@ -196,46 +201,48 @@ int main(int argc, char** argv){
 }
 
 
-int server_rm(char* filename, int fd_socket){ // Cloud server의 파일, 디렉토리 삭제
+int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토리 삭제
 	// 파일의 경우 unlink()를 호출,
 	// 디렉토리일 경우 해당 디렉토리의 '.' , '..'를 제외한 모든 subdirectory와 file을 삭제해야한다.
 
 	struct stat info;
 	DIR* dir_ptr;
 	struct dirent* direntp;
-
-	if(stat(filename, &info) == -1)
+	char tmp[1000];
+	if(stat(path, &info) == -1)
 		return -1;
-
 	if(!(S_ISDIR(info.st_mode))){ // 파일 삭제
-		printf("삭제 요청된 파일 : %s\n", filename);
-		unlink(filename);
+		printf("삭제 요청된 파일 : %s\n", path);
+		unlink(path);
 		return 0;
 	}
-
-	if((dir_ptr = opendir(filename)) == NULL)
+	printf("path :%s\n", path);
+	if((dir_ptr = opendir(path)) == NULL)
 		return -1;
 	else{ 			      
 		while((direntp = readdir(dir_ptr)) != NULL){
-			printf("삭제 요청된 디렉토리 : %s\n", filename);
+			printf("삭제 요청된 디렉토리 : %s\n", path);
 			
 			if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
 				continue;
-			chdir(filename);
+			
+			sprintf(tmp, "%s/%s", path, direntp->d_name);
 
-			if(stat(direntp->d_name, &info) == -1)
+			if(stat(tmp, &info) == -1){
+				printf("here ?: %s\n", tmp);
 				return -1;
+			}
 			
 			if(S_ISDIR(info.st_mode)) // 디렉토리일 경우 server_rm을 재귀호출
-				server_rm(direntp->d_name, fd_socket); //recursive point
+				server_rm(tmp, fd_socket); //recursive point
 			
 			else{ // 파일의 경우 unlink()호출.
-				unlink(direntp->d_name);
+				unlink(tmp);
 				continue;
 			}
 		}
-		chdir("..");
-		rmdir(filename); // '.', '..'을 제외한 모든 파일이 삭제 되었으므로 디렉토리 삭제.
+		//chdir("..");
+		rmdir(path); // '.', '..'을 제외한 모든 파일이 삭제 되었으므로 디렉토리 삭제.
 		closedir(dir_ptr);
 		return 0;
 		
@@ -248,7 +255,7 @@ int server_ls(int fd_socket){
 	// 'popen()'을 사용하여 client에게 'ls | sort' 출력을 전달.
 
 	// child process를 생성하여 shell에서 ls | sort 를 수행하도록 한다.
-	// 이에 대한 outputd을 pipe를 통해 parent process로 전달한다.
+	// 이에 대한 output을 pipe를 통해 parent process로 전달한다.
 	// parent process는 받은 output을 buf에 저장하여 client에 전달.
 	FILE* fp;
 	int len;
@@ -299,7 +306,7 @@ int server_download(int fd_socket){
 
 	read(fd_socket, &st_mode, sizeof(st_mode));
 	
-	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){
+	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
 		return -1;
 	}
 
@@ -313,7 +320,7 @@ int server_download(int fd_socket){
 		}
 		readnum= read(fd_socket, buf, size);
 
-        	if((write(fd_file, buf, readnum)) != readnum){
+        	if((write(fd_file, buf, readnum)) != readnum){ // client로부터 생성할 파일의 contents를 읽어서 write.
            		perror("write");
 			return -1;
 		}
@@ -341,7 +348,7 @@ int server_upload(int fd_socket){
 
 	printf("서버 -> 클라이언트 : %s ...\n", buf);
 
-	if((fd_file = open(buf, O_RDONLY)) == -1){
+	if((fd_file = open(buf, O_RDONLY)) == -1){ // client가 요청한 파일을 open
 		result = -1;
 		write(fd_socket, &result, sizeof(int));
 		return -1;
@@ -351,7 +358,7 @@ int server_upload(int fd_socket){
 	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
 
-	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
+	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){ // client에게 open한 파일의 contents를 전송 
 		write(fd_socket, &readnum, sizeof(int));
 
 		if(write(fd_socket, buf, readnum) != readnum){
