@@ -45,11 +45,13 @@ int main(int argc, char** argv){
 
 	while (1) {  // client main
 		memset(buf, 0, BUFSIZE);
+		printf("\033[1;32;99m");
 		printf("\n명령어 입력 (upload, download, remove, ls, cd, pwd, quit) : ");
 		scanf("%s", buf);
 		getchar();
 		write(fd_socket, buf,strlen(buf)); // which command? to server
 		//getchar();
+		printf("\033[0m");
 		if(!strcmp(buf,"upload")){
 			if((result = client_upload(fd_socket)) == -1){
 				printf("업로드 실패 - 존재하지 않는 파일 이름입니다.\n");
@@ -107,7 +109,7 @@ int client_rm(int fd_socket){
 	write(fd_socket, &len, sizeof(int));
 	write(fd_socket, buf, len);
 	read(fd_socket, &result, sizeof(int));
-
+	printf("%s : 삭제 완료\n", buf);
 	return result;
 }
 int client_ls(int fd_socket){
