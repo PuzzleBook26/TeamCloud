@@ -29,10 +29,18 @@ int server_pwd(int);
 int server_ls(int);
 int server_rm(char*, int);
 
+// SIGCHLD 는 child process가 종료되었을수때 발생하는 signal
+// child process가 종료 될때마다 sig_child 함수호출
+// waitpid는 특정 process 종료될때까지 기다린다.
+// waitpid의 첫번째 인자를 -1로 지정하면 임의의 child process를 기다린다.
+// 세번 째인자로 WNOHANG을 지정하면 다른 child process가 종료될때 까지 bloking되지않고 0을 반환하게 해준다.
+// 이로 parent process가 wait에서 blocking 되지 않고 다른 client의 연결을 기다릴 수 있게 해준다.
+
+
 void sig_child(int signal) {
 	pid_t pid;
 	int stat;
-	while ((pid = waitpid(-1, &stat, WNOHANG)) > 0);
+	while ((pid = waitpid(-1, NULL, WNOHANG)) > 0);
 	return;
 }
 int main(int argc, char** argv){
@@ -101,65 +109,67 @@ int main(int argc, char** argv){
 
 		}
 		if (pid == 0) {
-			close(listen_socket);
+			close(listen_socket); // child process에서 listen socket은 close.
 			memset(buf, 0, BUFSIZE);
 			printf("Cloud Sync ...\n");
 
 			while (1) { // Client에서의 명령어 요청 대기.
 				memset(buf, 0, BUFSIZE);
-				printf("wait for command ... \n");
+				printf("\nwait for command ... \n");
 				read(client_socket, buf, BUFSIZE); // command from client , which command?
-				printf("%s command accepted\n", buf);
+				printf("%s command accepted .\n", buf);
 
 				if (!strcmp(buf, "upload")) {
 					if ((result = server_download(client_socket)) == -1) {
-						printf("Upload error : check the file name\n");
+						printf("Upload error - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 					else
-						printf("Upload complete !\n");
+						printf("Upload complete - Client IP :%s\n", inet_ntoa(clnt_addr.sin_addr));
 				}
 				else if (!strcmp(buf, "download")) {
 					if ((result = server_upload(client_socket)) == -1) {
-						printf("Download error : check the file name\n");
+						printf("Download error - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 					else
-						printf("Download complete !\n");
+						printf("Download complete - Client IP :%s \n", inet_ntoa(clnt_addr.sin_addr));
 
 				}
 				else if (!strcmp(buf, "ls")) {
 					if ((result = server_ls(client_socket)) == -1) {
-						printf("ls error\n");
+						printf("ls error - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 					else
-						printf("ls complete !\n");
+						printf("ls complete - Client IP :%s \n", inet_ntoa(clnt_addr.sin_addr));
 				}
 				else if (!strcmp(buf, "pwd")) {
 					getcwd(buf, BUFSIZE);
 					write(client_socket, buf, strlen(buf));
+					printf("pwd complete - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 				}
 				else if (!strcmp(buf, "cd")) {
 					if ((result = server_cd(client_socket)) == -1) {
-						printf("cd error : check the directory name\n");
+						printf("cd error - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 					else
-						printf("cd complete !\n");
+						printf("cd complete - Client IP :%s \n", inet_ntoa(clnt_addr.sin_addr));
 				}
 				else if (!strcmp(buf, "remove")) {
 					memset(buf, 0, BUFSIZE);
 					read(client_socket, &len, sizeof(int));
 					read(client_socket, buf, BUFSIZE);
 					printf("%s\n", buf);
+
 					if ((result = server_rm(buf, client_socket)) == -1) {
 						write(client_socket, &result, sizeof(int));
-						printf("remove error : check the directory name\n");
+						printf("remove error - Client IP : %s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 					else {
 						write(client_socket, &result, sizeof(int));
-						printf("remove complete : %s\n", buf);
+						printf("remove complete - Client IP :%s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 				}
 				else if (!strcmp(buf, "quit")) {
-					printf("bye !\n");
+					printf("Bye !\n");
 					break;
 				}
 				else {
@@ -167,112 +177,99 @@ int main(int argc, char** argv){
 				}
 			}
 			printf("클라이언트 연결 해제 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
-			close(client_socket);
-			exit(0);
+			close(client_socket); // server와의 연결 종료
+			exit(0); // child process 종료
 		}
 		else {
 			
-			close(client_socket);
+			close(client_socket); // parent process에서는 client_socket 필요하지 않다.
 		}
+
+		// 각 process에서 필요하지 않거나 사용이 끝난 socket descriptor를 close 하지 않으면,  
+		// process에서 연결을 종료해도 descripotr는 다른 process에서 fork()시에 공유되어 사용되고 있기 때문에
+	 	// 여전히 descriptor의 reference count가 1이상의 값을 가져 실제로는 연결이 유지되고 있다.
 	
 	}
-	printf("server close\n");
+	printf("서버 종료\n");
 	close(listen_socket);
 	return 0;
 }
 
 
-int server_rm(char* filename, int fd_socket){
+int server_rm(char* filename, int fd_socket){ // Cloud server의 파일, 디렉토리 삭제
+	// 파일의 경우 unlink()를 호출,
+	// 디렉토리일 경우 해당 디렉토리의 '.' , '..'를 제외한 모든 subdirectory와 file을 삭제해야한다.
+
 	struct stat info;
 	DIR* dir_ptr;
-	struct dirent* direntp; 
+	struct dirent* direntp;
+
 	if(stat(filename, &info) == -1)
 		return -1;
-	if(!(S_ISDIR(info.st_mode))){ // file
+
+	if(!(S_ISDIR(info.st_mode))){ // 파일 삭제
+		printf("삭제 요청된 파일 : %s\n", filename);
 		unlink(filename);
 		return 0;
 	}
+
 	if((dir_ptr = opendir(filename)) == NULL)
 		return -1;
-	else{
+	else{ 			      
 		while((direntp = readdir(dir_ptr)) != NULL){
-			printf("filename : %s\n", filename);
-			if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, ".."))))
+			printf("삭제 요청된 디렉토리 : %s\n", filename);
+			
+			if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
 				continue;
 			chdir(filename);
+
 			if(stat(direntp->d_name, &info) == -1)
 				return -1;
 			
-			if(S_ISDIR(info.st_mode))
-				server_rm(direntp->d_name, fd_socket); //recursive
+			if(S_ISDIR(info.st_mode)) // 디렉토리일 경우 server_rm을 재귀호출
+				server_rm(direntp->d_name, fd_socket); //recursive point
 			
-			else{
+			else{ // 파일의 경우 unlink()호출.
 				unlink(direntp->d_name);
 				continue;
 			}
 		}
 		chdir("..");
-		rmdir(filename);
+		rmdir(filename); // '.', '..'을 제외한 모든 파일이 삭제 되었으므로 디렉토리 삭제.
 		closedir(dir_ptr);
 		return 0;
 		
 	}
-	//rmdir(filename);
-	//closedir(dir_ptr);
+	
 
 }
 int server_ls(int fd_socket){
-	//DIR *dir_ptr;
-	//int len;
-	//struct dirent *direntp;
-	//if((dir_ptr = opendir(".")) == NULL)
-	//	return -1;
-	//else{
-	//	while((direntp = readdir(dir_ptr)) != NULL){
-	//		strcpy(buf, direntp->d_name);
-	//		len = strlen(buf);
-	//		write(fd_socket, &len, sizeof(int));
-	//		printf("string : %s\n", buf);
-	//		printf("streln : %d\n", strlen(buf));
-	//		write(fd_socket, buf, strlen(buf));
-	//	}
-	//	closedir(dir_ptr);
-	//}
-	//len = 0;
-	//write(fd_socket, &len, sizeof(int));
-	//write(fd_socket, '\0', sizeof('\0'));
-	//shutdownOutput();
-	//fflush(fd_socket);
-	//write(fd_socket, "\0", strlen("\0"));
-	//return 0;
 
+	// 'popen()'을 사용하여 client에게 'ls | sort' 출력을 전달.
+
+	// child process를 생성하여 shell에서 ls | sort 를 수행하도록 한다.
+	// 이에 대한 outputd을 pipe를 통해 parent process로 전달한다.
+	// parent process는 받은 output을 buf에 저장하여 client에 전달.
 	FILE* fp;
 	int len;
 	fp = popen("ls | sort", "r");
+
 	while(fgets(buf, BUFSIZE-1, fp) != NULL){
 		buf[strlen(buf)-1] = '\0';
-		//printf("<<%d>>\n", strlen(buf));
+		
 		len = strlen(buf);
 		write(fd_socket, &len, sizeof(int));
-		//if(!(strcmp(buf,"\n"))) break;
+		
 		write(fd_socket, buf, len);
 		memset(buf, 0, BUFSIZE);
 	}
 	len = 0;
 	write(fd_socket, &len, sizeof(int));
 	//memset(buf, 0, BUFSIZE);
-	//write(fd_socket, buf, strlen(buf));
 	pclose(fp);
 	return 0;
 
-	//struct stat list;
-	//int file_fd, len;
-	//system("ls >ls.txt");
-	//stat("ls.txt", &list);
-	//len = list.st_size;
-	//send(fd_socket, &len, sizeof(int), 0);
-	//file_fd = open("ls.txt", O_RDONLY);
-	//sendfile(fd_socket, file_fd, NULL, len);
+	
 	
 }
 int server_pwd(int fd_socket){
@@ -284,35 +281,38 @@ int server_pwd(int fd_socket){
 	
 }
 int server_download(int fd_socket){
-	int fd_file, readnum, size, result;
-	//struct stat info;
+	int fd_file;
+	int readnum;
+	int size, result;
+	
 	mode_t st_mode;
 	memset(buf, 0, BUFSIZE);
 	read(fd_socket, &size, sizeof(int));
 	read(fd_socket, buf, size);
-	printf("download from client : %s\n", buf);
-	printf("downloading ... : %s\n", buf);
-	//strcpy(filename, buf);
-   	//memset(buf, 0, BUFSIZE);
+	printf("클라이언트 -> 서버 : %s ...\n", buf);
+
+
+	
 	read(fd_socket, &result, sizeof(int));
 	if(result == -1)
 		return -1;
+
 	read(fd_socket, &st_mode, sizeof(st_mode));
-	printf("stmode :%d\n", st_mode);
+	
 	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){
-		perror("open");
 		return -1;
 	}
+
 	memset(buf, 0, BUFSIZE);
 	while(1){
 		memset(buf, 0, BUFSIZE);
 		read(fd_socket, &size, sizeof(int));
-		printf("<<size : %d >>\n", size);
+
 		if(size == 0){
-			printf("here?\n");
 			break;
 		}
 		readnum= read(fd_socket, buf, size);
+
         	if((write(fd_file, buf, readnum)) != readnum){
            		perror("write");
 			return -1;
@@ -322,6 +322,7 @@ int server_download(int fd_socket){
 			return -1;
 		}
 	}
+
 	close(fd_file);
 	return 0;
 
@@ -329,34 +330,42 @@ int server_download(int fd_socket){
 	
 }
 int server_upload(int fd_socket){
-	int fd_file, readnum, size, result;
+	int fd_file, readnum;
+	int size, result;
+
 	struct stat info;
 	memset(buf, 0, BUFSIZE);
 
 	read(fd_socket, &size, sizeof(int));
 	read(fd_socket, buf, size);
-	printf("uploading ...  : %s\n", buf);
+
+	printf("서버 -> 클라이언트 : %s ...\n", buf);
+
 	if((fd_file = open(buf, O_RDONLY)) == -1){
 		result = -1;
 		write(fd_socket, &result, sizeof(int));
-		perror("open");
 		return -1;
 	}
+
 	stat(buf, &info);
 	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
+
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
 		write(fd_socket, &readnum, sizeof(int));
+
 		if(write(fd_socket, buf, readnum) != readnum){
 			perror("write");
 			return -1;
 		}
 		memset(buf, 0, BUFSIZE);
 	}
+
 	if(readnum == -1){
 		perror("read");
 		return -1;
 	}
+
 	readnum = 0;
 	write(fd_socket, &readnum, sizeof(int));
 	close(fd_file);
@@ -364,9 +373,9 @@ int server_upload(int fd_socket){
 }
 int server_cd(int fd_socket){
 	memset(buf, 0, BUFSIZE);
-	printf("path = %s\n", buf);
+	
 	read(fd_socket, buf, BUFSIZE);
-	printf("path = %s\n", buf);
+	// 클라이언트가 입력한 경로로 이동.
 	if(chdir(buf) == 0)
 		return 0;
 	else
