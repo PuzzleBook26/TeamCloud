@@ -8,24 +8,28 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-// element for Stack
+#define BUFSIZE 1024
+
 typedef struct Node{
-    char        filename[100];
+    char    filename[100];
     struct Node *next;
+
 }Node;
 
-// Stack header
+typedef struct List{
+    Node *head;
+
+}List;
 typedef struct Stack{
     Node *top;
 }Stack;
 
 
-//for dir system
-ino_t   get_inode(char *);
-void    do_ls(char []);
-void    dostat(char *);
-void    DFS();
-int     is_dir(char *);
+//for list
+int IsListEmpty(List *);
+void FindFile(List *, char *);
+void PrintList(List *);
+void AddList(List *, char *);
 
 
 //for stack
@@ -33,15 +37,23 @@ int     IsEmpty(Stack *);
 char*   Pop(Stack *);
 void    Push(char[], Stack *);
 
-Stack stack;
+//for dir system
+ino_t   get_inode(char *);
+void    do_ls(char []);
+void    dostat(char *);
+void    DFS();
+int     is_dir(char *);
+void 	error_handling(char *message);
 
 const int FALSE = 0;
 const int TRUE = 1;
-static int count = 0;  // stack순회를 위해 필요한 부분. 트리의 말단 까지 간 후 올라올떄 사용
-
 
 char *root = "/home/puzzlebook/";
-char *username = "TR";
+char *username = "Client";
+
+Stack stack;
+List list;
+
 
 //상대방이 어떤식으로 데이터를 처리해야할지 알려주는 부분
 const char* MSG_chdir  = "1";
@@ -52,9 +64,13 @@ const char* MSG_END    = "5";
 char* command_length[10];
 int sock;
 
-#define BUFSIZE 1024
 
-void error_handling(char *message);
+Stack stack;
+static int count = 0;  // stack순회를 위해 필요한 부분. 트리의 말단 까지 간 후 올라올떄 사용
+
+
+
+
 
 int main(int argc, char **argv){
     struct sockaddr_in serv_addr;
@@ -70,7 +86,7 @@ int main(int argc, char **argv){
 
     printf("please type dir that want to get service!! ::  ");
     //  scanf("%s", &rootdir);  
-    strcpy(rootdir, "/home/puzzlebook/TR/");
+    //strcpy(rootdir, "/home/puzzlebook/Client/");
 
     sock = socket(PF_INET, SOCK_STREAM, 0);   /* 서버 접속을 위한 소켓 생성 */
     if(sock == -1)
@@ -86,24 +102,27 @@ int main(int argc, char **argv){
 
     printf("done??\n");
 
+    printf("==%s=%s===\n", root, username);
+    chdir(root);
+
     while(1) {
         printf("server connected!!\n");
 
 
         // ============================tour============================//
-        if( !is_dir(rootdir) ){
+        if( !is_dir(username) ){
             printf("dir your typed is not dir!! :( \n");
             exit(1);
         }
 
-        Push(rootdir, &stack);
-        chdir(rootdir);
-        DFS(rootdir);
+        Push(username, &stack);
+        //    chdir(username);
+        DFS(username);
 
-        printf("sync is clear!!! exit connection\n");
+        printf("%s sync is clear!!! exit connection\n",username);
         break;
 
-        
+
 
     }
     close(sock);
@@ -165,7 +184,7 @@ void do_ls(char dirname[]){
 
             write(sock, MSG_chdir, sizeof(char));
 
-    	    sprintf(command_length, "%d", strlen(updir));
+            sprintf(command_length, "%d", strlen(updir));
             write(sock, command_length, sizeof(int));
             write(sock, "..", sizeof(".."));
         }
@@ -190,6 +209,10 @@ void do_ls(char dirname[]){
             if( ( (strcmp(direntp->d_name, ".")) && (strcmp(direntp->d_name, ".."))  ) == 0)
                 continue;
             else{
+                if(is_dir(direntp->d_name)){
+                    Push(direntp->d_name, &stack);
+                    continue;
+                }
                 write(sock, MSG_wait, sizeof(char));
                 dostat(direntp->d_name);
             }
@@ -200,6 +223,7 @@ void do_ls(char dirname[]){
     else
         return;
 }
+
 
 
 // do_ls가 읽어서 넘겨준 input string에 대한 파일 이름과 파일 크기를 전송하고
@@ -220,7 +244,7 @@ void dostat(char *filename){
 
         write(sock, filename, strlen(filename));
         printf("%s\n", filename);
-        
+
         //여기서 서버의 응답을 한번 기다려서 파일이 있는지 없는지 확인
         //없으면 파일 보내주고 있으면 다음라인으로
 
@@ -235,69 +259,136 @@ void dostat(char *filename){
         printf("%s\n", filesizeMsg);
         //여기서 서버측 응답 한번 기다려서
         //응답에 따라서 파일 전송 혹은 다음라인
-        if(is_dir(filename))
-            Push(filename, &stack);
     }
 }
 
-// input string에 대한 inode를 읽어오는 부분.
-// 현재는 미사용
-ino_t get_inode(char *filename){
-    struct stat info;
-    if(stat(filename, &info) == -1){
-        fprintf(stderr, "Cannot stat");
-        perror(filename);
-        exit(1);
+    // input string에 대한 inode를 읽어오는 부분.
+    // 현재는 미사용
+    ino_t get_inode(char *filename){
+        struct stat info;
+        if(stat(filename, &info) == -1){
+            fprintf(stderr, "Cannot stat");
+            perror(filename);
+            exit(1);
+        }
+        return info.st_ino;
     }
-    return info.st_ino;
-}
 
 
+    /*=================================data structure ========================*/
 
-/*
- * IsEmpty  ::  스택이 비어있는지 확인
- * Pop      ::  스택 Pop
- * Push     ::  스택 push
- */
-int     IsEmpty(Stack *stack){
-    if(stack->top == NULL)
-        return TRUE;
-    else
-        return FALSE;
-}
 
-char*   Pop(Stack *stack){
-    Node *now;
-    char *str;
-
-    str = malloc(sizeof(char) * 50);
-
-    if(IsEmpty(stack)){
-        printf("Stack is Empty\n");
-        return;
+    // implementation of list
+    int IsListEmpty(List *list){
+        if(list->head == NULL)
+            return TRUE;
+        else
+            return FALSE;
     }
-    else{
-        now = stack->top;
-        if(strcpy(str, now->filename) == 0){
-            printf("Error occur in strcpy of Stack pop\n");
+
+    void FindFile(List *list, char *filename){
+        Node *prev;
+        Node *now;
+
+        if(IsListEmpty(list)){
+            printf("List is Empty in find file\n");
             return;
         }
 
-        stack->top = now->next;
-        free(now);
-        return str;
-    }
-}
+        prev = list->head;
+        now = list->head;
 
-void    Push(char filename[], Stack *stack){
-    Node *temp;
-    temp = (Node*)malloc(sizeof(Node));
+        while(now){
+            if( (strcmp(now->filename, filename)) == 0 ){
+                printf("Find File :: %s\n", now->filename);
 
-    if( (strcpy(temp->filename, filename)) == NULL ){
-        printf("Error occur in strcpy of Stack push");
-        exit(1);
+                if(now == list->head){
+                    list->head = now->next; 
+                }
+                prev->next = now->next;
+                free(now);
+                now = prev->next;
+
+                return;
+            }
+            else{
+                prev = now;
+                now = now->next;
+            }
+        }
+        printf("Not Find %s :(\n",filename);
     }
-    temp->next = stack->top;
-    stack->top = temp;
-}
+
+    void PrintList(List *list){
+        Node *now;
+        now = list->head;
+
+        if(IsListEmpty(list)){
+            printf("List is Empty in Print\n");
+            return;
+        }
+        while(now != NULL){
+            printf("Print List :: %s\n", now->filename);
+            now = now->next;
+        }
+    }
+
+    void AddList(List *list, char *filename){
+        Node *temp;
+
+        temp = (Node*)malloc(sizeof(Node));
+
+        if( (strcpy(temp->filename, filename)) == NULL ){
+            printf("Error occur in strcpy of AddList Function");
+            exit(1);
+        }
+        temp->next = list->head;
+        list->head = temp;
+    }
+
+
+
+    //implementation of stack
+    int     IsEmpty(Stack *stack){
+        if(stack->top == NULL)
+            return TRUE;
+        else
+            return FALSE;
+    }
+
+    char*   Pop(Stack *stack){
+        Node *now;
+        char *str;
+
+        str = malloc(sizeof(char) * 50);
+
+        if(IsEmpty(stack)){
+            printf("Stack is Empty\n");
+            return;
+        }
+        else{
+            now = stack->top;
+            if(strcpy(str, now->filename) == 0){
+                printf("Error occur in strcpy of Stack pop\n");
+                return;
+            }
+
+            stack->top = now->next;
+            free(now);
+            return str;
+        }
+    }
+
+    void    Push(char filename[], Stack *stack){
+        Node *temp;
+        temp = (Node*)malloc(sizeof(Node));
+
+        if( (strcpy(temp->filename, filename)) == NULL ){
+            printf("Error occur in strcpy of Stack push");
+            exit(1);
+        }
+        temp->next = stack->top;
+        stack->top = temp;
+    }
+
 

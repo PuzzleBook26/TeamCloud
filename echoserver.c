@@ -11,15 +11,35 @@
 
 #define BUFSIZE 1024
 
-// for stack
 typedef struct Node{
-    char        filename[100];
+    char    filename[100];
     struct Node *next;
+
 }Node;
 
+typedef struct List{
+    Node *head;
+
+}List;
 typedef struct Stack{
     Node *top;
 }Stack;
+
+//for list
+int IsListEmpty(List *);
+int FindFile(List *, char *);
+void PrintList(List *);
+void AddList(List *, char *);
+
+
+//for stack
+int     IsEmpty(Stack *);
+char*   Pop(Stack *);
+void    Push(char[], Stack *);
+
+const int FALSE = 0;
+const int TRUE = 1;
+
 
 
 //for dir system
@@ -28,23 +48,17 @@ void    do_ls(char []);
 void    dostat(char *);
 void    DFS();
 int     is_dir(char *);
+void error_handling(char *message);
+void    ExitsFile(char *, int);
+void    FillList(List *);
 
-
-//for stack
-int     IsEmpty(Stack *);
-char*   Pop(Stack *);
-void    Push(char[], Stack *);
-
-Stack stack;
-
-const int FALSE = 0;
-const int TRUE = 1;
 static int count = 0;
 
 char *root = "/home/puzzlebook/";
-char *username = "TR";
+char *username = "Server";
 
-void error_handling(char *message);
+Stack stack;
+List list;
 
 int main(int argc, char **argv){
     int serv_sock;
@@ -85,12 +99,14 @@ int main(int argc, char **argv){
         error_handling("accept() error");
     printf("connection is good\n");
 
+    chdir(root);
+    chdir(username);
 
     while(1) {
 
         memset(message, 0x00, sizeof(message));
         read(clnt_sock, message, sizeof(char));
-        printf("1--command :: %s\n", message);
+        //printf("1--command :: %s\n", message);
 
         if( (strcmp(message, "1")) == 0 ){ // chdir
             str_len = read(clnt_sock, message, sizeof(int));
@@ -98,8 +114,15 @@ int main(int argc, char **argv){
 
             str_len = atoi(message);
             read(clnt_sock, message, str_len);
-            printf("2--change directory :: %s\n", message);
+            //printf("2--change directory :: %s\n", message);
+            
+            if(strcmp(message, "..") == 0){
+                chdir("..");
+                continue;
+            }
             // 여기에 들어온 input에 대해서 chdir 혹은 mkdir
+            FillList(&list);
+            ExitsFile(message, 1);  
         }
 
         else if( strcmp(message, "2") == 0 ){ // saerch
@@ -112,18 +135,20 @@ int main(int argc, char **argv){
 
                 str_len = atoi(message);
                 read(clnt_sock, message, str_len);
-                printf("3--search file name :: %s\n", message);
+                //printf("3--search file name :: %s\n", message);
+                
                 //여기에 들어온 input 에 대해서 파일 있는지 확인
                 //만약 파일이 없으면 여기서 한번 메세지 보내서 통신 종료후 파일 요청
-                
-                
+                FillList(&list);
+                ExitsFile(message, 2);
+
                 memset(message, 0x00, sizeof(message));
                 str_len = read(clnt_sock, message, sizeof(int));
                 //printf(">>>>%s\n", message);
 
                 str_len = atoi(message);
                 read(clnt_sock, message, str_len);
-                printf("3--search file size :: %s\n", message);
+                //printf("3--search file size :: %s\n", message);
                 //여기에 들어온 size랑 비교해서 값이 업데이트 되었는지 확인
                 //여기서도 메세지 전송해서 비교 후 파일 요청 혹은 다음라인
                 memset(message, 0x00, sizeof(message));
@@ -140,27 +165,63 @@ int main(int argc, char **argv){
 
         continue;
 
-        /*
-
-           int main(int ac, char *av[]){
-           if(ac != 2){
-           printf("usage <app> <path>\n");
-           exit(1);
-           }
-           else{
-           Push(username, &stack);
-           chdir(root);
-           DFS();
-           }
-           }
-
-*/
-
 
     }
     close(clnt_sock);       /* 연결 종료 */
 
     return 0;
+}
+
+void FillList(List *filelist){
+    DIR             *dir_ptr;
+    struct  dirent  *direntp;
+    char            *backUp;
+
+    filelist->head = NULL;
+    
+    if( (dir_ptr = opendir(".")) == NULL){
+        printf("Open dir is error in FILL list function\n");
+        exit(1);
+    }
+
+    while( (direntp = readdir(dir_ptr)) != NULL ){
+        if( ( (strcmp(direntp->d_name, ".")) && (strcmp(direntp->d_name, ".."))  ) == 0)
+            continue;
+        else{
+            AddList(filelist, direntp->d_name);
+        }
+    }
+    closedir(dir_ptr);
+
+
+}
+
+//mode 1 :: chdir
+//mode 2 :: open dir
+void ExitsFile(char *filename, int mode){
+    int result;
+
+    if(mode == 1){  // dir
+        if(FindFile(&list, filename)){
+            chdir(filename);
+        }
+        else{
+            if(mkdir(filename, 0755) == 0){
+                chdir(filename);
+                printf("Complete mkdir %s +++++++++++++++++\n\n", filename);
+            }
+            else
+                printf("????   %s mkdir error in ExitsFile\n", filename);
+        }
+    }
+    else if(mode == 2){  // file
+        if(FindFile(&list, filename)){
+            return;
+        }
+        else{
+            printf("REQUEST]  %s is not exist in this dir!!\n\n", filename);
+        }
+    }
 }
 
 void error_handling(char *message){
@@ -249,12 +310,81 @@ ino_t get_inode(char *filename){
 }
 
 
+/*=================================data structure ========================*/
 
-/*
- * IsEmpty  ::  스택이 비어있는지 확인
- * Pop      ::  스택 Pop
- * Push     ::  스택 push
- */
+
+// implementation of list
+int IsListEmpty(List *list){
+    if(list->head == NULL)
+        return TRUE;
+    else
+        return FALSE;
+}
+
+int FindFile(List *list, char *filename){
+    Node *prev;
+    Node *now;
+
+    if(IsListEmpty(list)){
+        printf("List is Empty in find file\n");
+        return FALSE;
+    }
+
+    prev = list->head;
+    now = list->head;
+
+    while(now){
+        if( (strcmp(now->filename, filename)) == 0 ){
+            printf("Find File :: %s\n", now->filename);
+
+            if(now == list->head){
+                list->head = now->next; 
+            }
+            prev->next = now->next;
+            free(now);
+            now = prev->next;
+
+            return TRUE;
+        }
+        else{
+            prev = now;
+            now = now->next;
+        }
+    }
+    printf("Not Find %s :(\n",filename);
+    return FALSE;
+}
+
+void PrintList(List *list){
+    Node *now;
+    now = list->head;
+
+    if(IsListEmpty(list)){
+        printf("List is Empty in Print\n");
+        return;
+    }
+    while(now != NULL){
+        printf("Print List :: %s\n", now->filename);
+        now = now->next;
+    }
+}
+
+void AddList(List *list, char *filename){
+    Node *temp;
+
+    temp = (Node*)malloc(sizeof(Node));
+
+    if( (strcpy(temp->filename, filename)) == NULL ){
+        printf("Error occur in strcpy of AddList Function");
+        exit(1);
+    }
+    temp->next = list->head;
+    list->head = temp;
+}
+
+
+
+//implementation of stack
 int     IsEmpty(Stack *stack){
     if(stack->top == NULL)
         return TRUE;
@@ -296,6 +426,7 @@ void    Push(char filename[], Stack *stack){
     temp->next = stack->top;
     stack->top = temp;
 }
+
 
 
 
