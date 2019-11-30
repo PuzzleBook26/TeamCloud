@@ -84,15 +84,13 @@ void sync_send(int sock, char *username){
         dirname = Pop(&stack);
         count++;
         do_ls(sock, dirname);
-
     }while( !(IsEmpty(&stack)) );
 
     write(sock, MSG_END, sizeof(char));
-
 }
 
 // 싱크를 맞추기 위해서 받은 메세지를 처리하는 부분
-void sync_recv(int sock){//, char *username){
+void sync_recv(int sock){
     int str_len;
     char filename[50];
     char currunt_path[256];
@@ -202,7 +200,7 @@ void sync_recv(int sock){//, char *username){
             }
             //상대방의 통신 종료 메세지를 받고 통신이 종료되는 부분
         }else if( strcmp(message, "5") == 0 ){
-            printf("통신 is over!! \n");
+           // printf("통신 is over!! \n");
             break;
         }
         continue;
@@ -230,7 +228,7 @@ int file_rm(int sock, char *filename){
         return -1;
     else{ 			      
         while((direntp = readdir(dir_ptr)) != NULL){
-            printf("삭제 요청된 디렉토리 : %s\n", filename);
+           // printf("삭제 요청된 디렉토리 : %s\n", filename);
 
             if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
                 continue;
@@ -372,7 +370,7 @@ void do_ls(int sock, char dirname[]){
 
         write(sock, MSG_search, sizeof(char));
         while( (direntp = readdir(dir_ptr)) != NULL ){
-            printf(">> %s\n", direntp->d_name);
+           // printf(">> %s\n", direntp->d_name);
             if( ( (strcmp(direntp->d_name, ".")) && (strcmp(direntp->d_name, ".."))  ) == 0)
                 continue;
             else{
@@ -401,7 +399,7 @@ void dostat(int sock, char *filename){
     int filesize;
     char *filesizeMsg[10];
     char *returnMsg[50];
-    printf("in dostat %s\n", filename);
+   // printf("in dostat %s\n", filename);
     
     if(stat(filename, &info) == -1){
         printf("Do not stat\n");
@@ -413,10 +411,10 @@ void dostat(int sock, char *filename){
         
         read(sock, returnMsg, sizeof(char));
         if(strcmp(returnMsg, "1") == 0){
-            printf("Send file %s !! \n", filename);
+            //printf("Send file %s !! \n", filename);
             //todo
             sync_upload(sock, filename);
-            printf("Done %s\n", filename);
+           // printf("Done %s\n", filename);
             return;
         }
         else if(strcmp(returnMsg, "2") == 0){
@@ -435,7 +433,7 @@ void dostat(int sock, char *filename){
         //응답에 따라서 파일 전송 혹은 다음라인
         read(sock, returnMsg, sizeof(char));
         if(strcmp(returnMsg, "1") == 0){
-            printf("Send file %s !! \n", filename);
+            //printf("Send file %s !! \n", filename);
             //todo
             sync_upload(sock, filename);
             return;
@@ -461,7 +459,7 @@ char* getHead(List *list){
     strcpy(str, now->filename);
     free(now);
 
-    printf("getHead의 반환 스트링이야 %s\n", str);
+    //printf("getHead의 반환 스트링이야 %s\n", str);
     return str;
 }
 
@@ -513,7 +511,7 @@ void PrintList(List *list){
         return;
     }
     while(now != NULL){
-        printf("Print List :: %s\n", now->filename);
+        //printf("Print List :: %s\n", now->filename);
         now = now->next;
     }
 }
