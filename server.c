@@ -18,7 +18,6 @@
 
 #define BUFSIZE 1024
 #define BACKLOG 10
-char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_server/";
 
 char buf[BUFSIZE];
 void error_handling(char *message);
@@ -290,7 +289,7 @@ int server_pwd(int fd_socket){
 int server_download(int fd_socket){
 	int fd_file;
 	int readnum;
-	int size, result;
+	int size, result=0;
 	
 	mode_t st_mode;
 	memset(buf, 0, BUFSIZE);
@@ -304,9 +303,9 @@ int server_download(int fd_socket){
 	if(result == -1)
 		return -1;
 
-	read(fd_socket, &st_mode, sizeof(st_mode));
+	//read(fd_socket, &st_mode, sizeof(st_mode));
 	
-	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
+	if((fd_file = creat(buf, 0644 )) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
 		return -1;
 	}
 
@@ -338,7 +337,7 @@ int server_download(int fd_socket){
 }
 int server_upload(int fd_socket){
 	int fd_file, readnum;
-	int size, result;
+	int size, result =0;
 
 	struct stat info;
 	memset(buf, 0, BUFSIZE);
@@ -353,9 +352,9 @@ int server_upload(int fd_socket){
 		write(fd_socket, &result, sizeof(int));
 		return -1;
 	}
-
-	stat(buf, &info);
-	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
+	write(fd_socket, &result, sizeof(int));
+	//stat(buf, &info);
+	//write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
 
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){ // client에게 open한 파일의 contents를 전송 
