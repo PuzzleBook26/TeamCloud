@@ -118,7 +118,6 @@ void sync_recv(int sock){//, char *username){
                 mkdir(message, 0755);
                 chdir(message);
             }
-            printf("===================%s=================\n", message);
             FillList(&list);
         }
 
@@ -148,8 +147,6 @@ void sync_recv(int sock){//, char *username){
                 if((FindFile(&list, filename)) == FALSE){
                     write(sock, "1", sizeof(char));
                     // todo
-
-                    printf("%s 다운받기 원해\n", message);
                     sync_download(sock, message);
                     FindFile(&list, message);
 
@@ -171,8 +168,6 @@ void sync_recv(int sock){//, char *username){
                     write(sock, "1", sizeof(char));
 
                     //todo
-                    printf("%s 파일크기가 안맞아\n", filename);
-
                     sync_download(sock, filename);
                     FindFile(&list, filename);
                     memset(message, 0x00, sizeof(message));
@@ -199,7 +194,6 @@ void sync_recv(int sock){//, char *username){
             }
             //상대방의 통신 종료 메세지를 받고 통신이 종료되는 부분
         }else if( strcmp(message, "5") == 0 ){
-            printf("통신 is over!! \n");
             break;
         }
         continue;
@@ -227,7 +221,6 @@ int file_rm(int sock, char *filename){
         return -1;
     else{ 			      
         while((direntp = readdir(dir_ptr)) != NULL){
-            printf("삭제 요청된 디렉토리 : %s\n", filename);
 
             if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
                 continue;
@@ -412,7 +405,6 @@ void dostat(int sock, char *filename){
 
         read(sock, returnMsg, sizeof(char));
         if(strcmp(returnMsg, "1") == 0){
-            printf("Send file %s !! \n", filename);
             //todo
             sync_upload(sock, filename);
             return;
@@ -433,7 +425,6 @@ void dostat(int sock, char *filename){
         //응답에 따라서 파일 전송 혹은 다음라인
         read(sock, returnMsg, sizeof(char));
         if(strcmp(returnMsg, "1") == 0){
-            printf("Send file %s !! \n", filename);
             // todo
             sync_upload(sock, filename);
             return;
@@ -459,7 +450,6 @@ char* getHead(List *list){
     strcpy(str, now->filename);
     free(now);
 
-    printf("getHead의 반환 스트링이야 %s\n", str);
     return str;
 }
 
@@ -475,19 +465,16 @@ int FindFile(List *list, char *filename){
     Node *now;
 
     if(IsListEmpty(list)){
-        //printf("List is Empty in find file\n");
         return FALSE;
     }
 
     prev = list->head;
     now = list->head;
-    printf("찾기 원하는 파일은 %s\n", filename);
     while(now){
         if( (strcmp(now->filename, filename)) == 0 ){
             if(now == list->head){
                 list->head = now->next; 
             }
-            printf("찾았다!! %s\n", filename);
             prev->next = now->next;
             free(now);
             now = prev->next;
@@ -499,7 +486,6 @@ int FindFile(List *list, char *filename){
             now = now->next;
         }
     }
-    printf("Not Find %s :(\n",filename);
     return FALSE;
 }
 
@@ -508,11 +494,9 @@ void PrintList(List *list){
     now = list->head;
 
     if(IsListEmpty(list)){
-        printf("List is Empty in Print\n");
         return;
     }
     while(now != NULL){
-        printf("Print List :: %s\n", now->filename);
         now = now->next;
     }
 }
@@ -547,13 +531,11 @@ char*   Pop(Stack *stack){
     str = malloc(sizeof(char) * 50);
 
     if(IsEmpty(stack)){
-        printf("Stack is Empty\n");
         return 0;
     }
     else{
         now = stack->top;
         if(strcpy(str, now->filename) == 0){
-            printf("Error occur in strcpy of Stack pop\n");
             return 0;
         }
 
@@ -598,19 +580,16 @@ int sync_upload(int fd_socket , char *filename){
 
     }
     write(fd_socket, &result, sizeof(int));
-    printf("%s : 업로드 중  ...\n", filename);
     //stat(filename, &info);
     //write(fd_socket, &info.st_mode, sizeof(info.st_mode));
     memset(buf, 0, BUFSIZE);
 
     while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
-        printf("readnum :: %d\n", readnum);
         write(fd_socket, &readnum, sizeof(int));
         if(write(fd_socket, buf, readnum) != readnum){
             perror("write");
             return -1;
         }
-        //    printf(">>>%s\n", buf);
         memset(buf, 0, BUFSIZE);
     }
 
@@ -622,7 +601,6 @@ int sync_upload(int fd_socket , char *filename){
     readnum = 0;
     write(fd_socket, &readnum, sizeof(int));
     close(fd_file);
-    printf("%s : 업로드 완료 \n", filename);
 
     return 0;
 }
@@ -635,17 +613,10 @@ int sync_download(int fd_socket, char* filename){
     int size = 0, result = 0;
 
     mode_t st_mode;
-    //memset(buf, 0, BUFSIZE);
-    //read(fd_socket, &size, sizeof(int));
-    //read(fd_socket, buf, size);
-    printf("클라이언트 -> 서버 : %s ...\n", filename);
-
-
 
     read(fd_socket, &result, sizeof(int));
     if(result == -1)
         return -1;
-    // read(fd_socket, &st_mode, sizeof(st_mode));
     if((fd_file = creat(filename, 0644)) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
         return -1;
     }
@@ -653,8 +624,6 @@ int sync_download(int fd_socket, char* filename){
     while(1){
         memset(buf, 0, BUFSIZE);
         read(fd_socket, &size, sizeof(int));
-
-        printf("사이즈 크기는 %d\n",size);
 
         if(size == 0){
             break;
@@ -666,7 +635,6 @@ int sync_download(int fd_socket, char* filename){
             perror("write");
             return -1;
         }
-        //printf(">>>%s\n",buf);
 
         if(readnum == -1){
             perror("read");
