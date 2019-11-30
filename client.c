@@ -19,6 +19,9 @@ int client_ls(int);
 int client_rm(int);
 void error_handling(char*, char*);
 char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_client";
+char *root = "/home/kyj0609/바탕화면/";
+
+
 int main(int argc, char** argv){
 	int fd_socket, result, len;
 	struct sockaddr_in serv_addr;
@@ -45,13 +48,41 @@ int main(int argc, char** argv){
 
 	printf("Cloud Sync ...\n");
     
-    //dirname을 상대방에게 알려주는 부분
-    write(fd_socket, dirname, strlen(dirname));
+    	//dirname을 상대방에게 알려주는 부분
+        write(fd_socket, dirname, strlen(dirname));
+        chdir(root);
+	while(1){
+		printf("\033[1;32;99m");
+		memset(buf, 0, BUFSIZE);
+		printf("동기화 모드 (push, pull, cancel) : ");
+		scanf("%s", buf);
+		printf("\033[0m");
+		write(fd_socket, buf, strlen(buf));
+		getchar();
+        	if(!strcmp(buf, "push")){
+        	    chdir(root);
+        	    sync_send(fd_socket, dirname );
+		    break;
+        	}
+        	else if(!strcmp(buf, "pull")){
+        	    chdir(root);
+        	    sync_recv(fd_socket);
+		    break;
+        	}
+		else if(!strcmp(buf, "cancel")){
+		    printf("동기화 취소\n");
+		    chdir(dirname);
+		    break;		
+		}
+		else{
+		    printf("잘못된 동기화 명령어 입력\n");
+		}
+	}
 
 	while (1) {  // client main
 		memset(buf, 0, BUFSIZE);
 		printf("\033[1;32;99m");
-		printf("\n명령어 입력 (upload, download, remove, ls, cd, pwd, quit) : ");
+		printf("\n명령어 입력 (upload, download, remove, ls, myls, cd, pwd, mypwd, quit) : ");
 		scanf("%s", buf);
 		getchar();
 		write(fd_socket, buf,strlen(buf)); // which command? to server
@@ -71,11 +102,23 @@ int main(int argc, char** argv){
 		}
 		else if(!strcmp(buf, "pwd")){
 			read(fd_socket, buf, BUFSIZE);
-			printf("----------현재 작업 경로----------\n %s\n", buf);
-		} 
+			printf("----------현재 서버 작업 경로----------\n %s\n", buf);
+			printf("-------------------------------------\n");
+		}
+		else if(!strcmp(buf, "mypwd")){
+			getcwd(buf,BUFSIZE);
+			printf("----------현재 클라이언트 작업 경로----------\n %s\n", buf);
+			printf("------------------------------------------\n");
+				
+		}
 		else if(!strcmp(buf, "ls")){
 			if((result = client_ls(fd_socket)) == -1){
 				printf("ls error\n");
+			}
+		}
+		else if(!strcmp(buf, "myls")){
+			if((result = client_myls()) == -1){
+				printf("myls error\n");
 			}
 		}
 		else if(!strcmp(buf, "remove")){
@@ -89,14 +132,6 @@ int main(int argc, char** argv){
 				printf("경로 이동 실패 - 존재하지 않는 경로입니다.\n");
 			}
 		}
-        else if(!strcmp(buf, "push")){
-            //chdir(root);
-            sync_send(fd_socket, dirname );
-        }
-        else if(!strcmp(buf, "pull")){
-            //chdir
-            sync_recv(fd_socket);
-        }
 		else if(!strcmp(buf, "quit")){
 			printf("서버와의 연결 종료\n");
 			break;
@@ -125,11 +160,22 @@ int client_rm(int fd_socket){
 	printf("%s : 삭제 완료\n", buf);
 	return result;
 }
+int client_myls(){
+	FILE* fp;
+	fp = popen("ls | sort", "r");
+	printf("----------현재 클라이언트 파일 목록----------\n");
+	while(fgets(buf, BUFSIZE-1, fp) != NULL){
+		printf("%s",buf);
+	}
+	printf("-------------------------------------------\n");
+	return 0;
+        
+}
 int client_ls(int fd_socket){
 	int readnum;
 	int len;
 	
-	printf("----------현재 파일 목록----------\n");
+	printf("----------현재 서버 파일 목록----------\n");
 
 	while(1){
 		read(fd_socket, &len, sizeof(int));  // server로부터 ls | sort output을 받아 print
@@ -143,7 +189,7 @@ int client_ls(int fd_socket){
 		return -1;
 	}
 
-	printf("---------------------------------\n");
+	printf("-------------------------------------\n");
 	return 0;
 
 	
@@ -182,6 +228,7 @@ int client_upload(int fd_socket){
 		return -1;
 		
 	}
+	write(fd_socket, &result, sizeof(int));
 	printf("%s : 업로드 중  ...\n", filename);
 	stat(filename, &info);
 	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
@@ -225,7 +272,7 @@ int client_download(int fd_socket){
 		return -1;
 
 	read(fd_socket, &st_mode, sizeof(st_mode));
-	if((fd_file = open(filename, O_RDWR | O_CREAT, st_mode )) == -1){
+	if((fd_file = creat(filename, st_mode )) == -1){
 		return -1;
 	}
 	printf("%s : 다운로드 중  ...\n", filename);
@@ -234,7 +281,7 @@ int client_download(int fd_socket){
 	while(1){
 		memset(buf, 0, BUFSIZE);
 		read(fd_socket, &size, sizeof(int));
-		printf("<<size : %d >>\n", size);
+		
 		if(size == 0) break;
 		readnum= read(fd_socket, buf, size);
         	if((write(fd_file, buf, readnum)) != readnum){
