@@ -18,7 +18,7 @@ int client_pwd(int);
 int client_ls(int);
 int client_rm(int);
 void error_handling(char*, char*);
-
+char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_client";
 int main(int argc, char** argv){
 	int fd_socket, result, len;
 	struct sockaddr_in serv_addr;
@@ -182,15 +182,13 @@ int client_upload(int fd_socket){
 		return -1;
 		
 	}
-	write(fd_socket, &result, sizeof(int));
 	printf("%s : 업로드 중  ...\n", filename);
-	//stat(filename, &info);
-	//write(fd_socket, &info.st_mode, sizeof(info.st_mode));
+	stat(filename, &info);
+	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
 
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
 		write(fd_socket, &readnum, sizeof(int));
-		//printf("<<size : %d >>\n", readnum);
 		if(write(fd_socket, buf, readnum) != readnum){
 			perror("write");
 			return -1;
@@ -226,8 +224,8 @@ int client_download(int fd_socket){
 	if(result == -1)
 		return -1;
 
-	//read(fd_socket, &st_mode, sizeof(st_mode));
-	if((fd_file = creat(filename, 0644 )) == -1){
+	read(fd_socket, &st_mode, sizeof(st_mode));
+	if((fd_file = open(filename, O_RDWR | O_CREAT, st_mode )) == -1){
 		return -1;
 	}
 	printf("%s : 다운로드 중  ...\n", filename);
@@ -236,7 +234,7 @@ int client_download(int fd_socket){
 	while(1){
 		memset(buf, 0, BUFSIZE);
 		read(fd_socket, &size, sizeof(int));
-		//printf("<<size : %d >>\n", size);
+		printf("<<size : %d >>\n", size);
 		if(size == 0) break;
 		readnum= read(fd_socket, buf, size);
         	if((write(fd_file, buf, readnum)) != readnum){

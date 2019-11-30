@@ -18,6 +18,7 @@
 
 #define BUFSIZE 1024
 #define BACKLOG 10
+char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_server/";
 
 char buf[BUFSIZE];
 void error_handling(char *message);
@@ -99,9 +100,7 @@ int main(int argc, char** argv){
 		if (client_socket == -1)
 			error_handling("accept() error");
 		else{
-			printf("\033[1;36m");
 			printf("새로운 클라이언트 연결 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
-			printf("\033[0m");
 		}
 		// 새로운 Client 접속시 fork()를 호출하여 각 Client마다 Child process Server를 만들어준다.
 		// 생성된 Child Server가 각 Client의 접속을 관리하게 된다.
@@ -121,10 +120,8 @@ int main(int argc, char** argv){
 
 			while (1) { // Client에서의 명령어 요청 대성기.
 				memset(buf, 0, BUFSIZE);
-				printf("\033[1;33m");
 				printf("\nwait for command ... \n");
 				read(client_socket, buf, BUFSIZE); // client가 입력한 명령을 받아옴.
-				printf("\033[0m");
 				printf("%s command accepted .\n", buf);
 
 				if (!strcmp(buf, "upload")) {
@@ -195,9 +192,7 @@ int main(int argc, char** argv){
 					printf("Invalid command\n");
 				}
 			}
-			printf("\033[1;36m");
 			printf("클라이언트 연결 해제 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
-			printf("\033[0m");
 			close(client_socket); // server와의 연결 종료
 			exit(0); // child process 종료
 		}
@@ -228,14 +223,16 @@ int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토�
 	if(stat(path, &info) == -1)
 		return -1;
 	if(!(S_ISDIR(info.st_mode))){ // 파일 삭제
+		printf("삭제 요청된 파일 : %s\n", path);
 		unlink(path);
 		return 0;
 	}
-	
+	printf("path :%s\n", path);
 	if((dir_ptr = opendir(path)) == NULL)
 		return -1;
 	else{ 			      
 		while((direntp = readdir(dir_ptr)) != NULL){
+			printf("삭제 요청된 디렉토리 : %s\n", path);
 			
 			if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
 				continue;
@@ -243,7 +240,7 @@ int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토�
 			sprintf(tmp, "%s/%s", path, direntp->d_name);
 
 			if(stat(tmp, &info) == -1){
-				
+				printf("here ?: %s\n", tmp);
 				return -1;
 			}
 			
@@ -255,7 +252,7 @@ int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토�
 				continue;
 			}
 		}
-
+		//chdir("..");
 		rmdir(path); // '.', '..'을 제외한 모든 파일이 삭제 되었으므로 디렉토리 삭제.
 		closedir(dir_ptr);
 		return 0;
@@ -304,7 +301,7 @@ int server_pwd(int fd_socket){
 int server_download(int fd_socket){
 	int fd_file;
 	int readnum;
-	int size, result=0;
+	int size, result;
 	
 	mode_t st_mode;
 	memset(buf, 0, BUFSIZE);
@@ -318,9 +315,9 @@ int server_download(int fd_socket){
 	if(result == -1)
 		return -1;
 
-	//read(fd_socket, &st_mode, sizeof(st_mode));
+	read(fd_socket, &st_mode, sizeof(st_mode));
 	
-	if((fd_file = creat(buf, 0644 )) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
+	if((fd_file = open(buf, O_RDWR | O_CREAT, st_mode )) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
 		return -1;
 	}
 
@@ -352,7 +349,7 @@ int server_download(int fd_socket){
 }
 int server_upload(int fd_socket){
 	int fd_file, readnum;
-	int size, result =0;
+	int size, result;
 
 	struct stat info;
 	memset(buf, 0, BUFSIZE);
@@ -367,9 +364,9 @@ int server_upload(int fd_socket){
 		write(fd_socket, &result, sizeof(int));
 		return -1;
 	}
-	write(fd_socket, &result, sizeof(int));
-	//stat(buf, &info);
-	//write(fd_socket, &info.st_mode, sizeof(info.st_mode));
+
+	stat(buf, &info);
+	write(fd_socket, &info.st_mode, sizeof(info.st_mode));
 	memset(buf, 0, BUFSIZE);
 
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){ // client에게 open한 파일의 contents를 전송 
