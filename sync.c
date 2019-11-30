@@ -73,6 +73,9 @@ List list;
 
 // sync를 맞추기 위해서 자신의 디렉토리 구조를 DFS순회를 하면서 상대방에게
 // 디렉토리와 파일 구조를 보내주는 부분
+
+// sync를 맞추기 위해서 자신의 디렉토리 구조를 DFS순회를 하면서 상대방에게
+// 디렉토리와 파일 구조를 보내주는 부분
 void sync_send(int sock, char *username){
     char *dirname;
 
@@ -125,16 +128,17 @@ void sync_recv(int sock){//, char *username){
         // 존재한다면 pass, 존재하지 않는다면 파일 전송 요청
         else if( strcmp(message, "2") == 0 ){
             read(sock, message, sizeof(char));
-
             while(strcmp(message, "3") == 0){
-
+                // 파일의 이름을 읽어옴
                 memset(message, 0x00, sizeof(message));
                 read(sock, message, sizeof(int));
-
+                
                 str_len = atoi(message);
                 read(sock, message, str_len);
 
-
+                // 만약 들어온 파일의 이름이 디렉토리일 경우
+                // case 1번에서 알아서 디렉토리가 생성되기 때문에
+                // list에서 해당디렉토리를 지워주고 다시 상대방의 메세지 대기
                 if(is_dir(message) == 1){
                     write(sock, "2", sizeof(char));
                     FindFile(&list, message);
@@ -142,9 +146,10 @@ void sync_recv(int sock){//, char *username){
                     read(sock, message, sizeof(char)); 
                     continue;
                 }
-
-                strcpy(filename, message);
-                if((FindFile(&list, filename)) == FALSE){
+                // 만약 들어온 파일이 존재하지 않을 경우
+                // 이 부분에서 상대방에게 파일 전송을 요청 함
+                // 이후에 다시 상대방 메세지 대기
+                if(ExitsFile(&list, message, 2) == FALSE){
                     write(sock, "1", sizeof(char));
                     // todo
                     sync_download(sock, message);
@@ -155,7 +160,7 @@ void sync_recv(int sock){//, char *username){
                     continue;
                 }
                 write(sock, "0", sizeof(char));
-                //strcpy(filename, message);
+                strcpy(filename, message);
 
                 // 파일의 크기를 읽는 부분
                 memset(message, 0x00, sizeof(message));
@@ -163,7 +168,10 @@ void sync_recv(int sock){//, char *username){
 
                 str_len = atoi(message);
                 read(sock, message, str_len);
-
+                // 만약 위에서 파일이 존재한다고 여겨졌지만
+                // 해당 파일과 상대방이 보낸 파일의 크기가 서로 다른경우
+                // 이 경우에는 파일이 업데이트 되었다는 것을 의미하므로
+                // 상대방에게 파일 전송을 요청하게됨
                 if(getSize(filename) != atoi(message)){
                     write(sock, "1", sizeof(char));
 
@@ -194,6 +202,7 @@ void sync_recv(int sock){//, char *username){
             }
             //상대방의 통신 종료 메세지를 받고 통신이 종료되는 부분
         }else if( strcmp(message, "5") == 0 ){
+            printf("통신 is over!! \n");
             break;
         }
         continue;
@@ -221,6 +230,7 @@ int file_rm(int sock, char *filename){
         return -1;
     else{ 			      
         while((direntp = readdir(dir_ptr)) != NULL){
+            printf("삭제 요청된 디렉토리 : %s\n", filename);
 
             if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
                 continue;
@@ -263,8 +273,6 @@ void FillList(List *filelist){
     while( (direntp = readdir(dir_ptr)) != NULL ){
         if( ( (strcmp(direntp->d_name, ".")) && (strcmp(direntp->d_name, ".."))  ) == 0)
             continue;
-        //else if(is_dir(direntp->d_name) == TRUE)
-        //    continue;
         else{
             AddList(filelist, direntp->d_name);
         }
@@ -345,7 +353,7 @@ void do_ls(int sock, char dirname[]){
         if( (dir_ptr = opendir(dirname)) == NULL ){
             count --;
             chdir("..");        // 스택 말단까지 간 후 위로 올라가는 부분
-
+            
             write(sock, MSG_chdir, sizeof(char));
             sprintf(command_length, "%d", strlen(updir));
             write(sock, command_length, sizeof(int));
@@ -364,6 +372,7 @@ void do_ls(int sock, char dirname[]){
 
         write(sock, MSG_search, sizeof(char));
         while( (direntp = readdir(dir_ptr)) != NULL ){
+            printf(">> %s\n", direntp->d_name);
             if( ( (strcmp(direntp->d_name, ".")) && (strcmp(direntp->d_name, ".."))  ) == 0)
                 continue;
             else{
@@ -371,7 +380,6 @@ void do_ls(int sock, char dirname[]){
                     Push(direntp->d_name, &stack);
                     continue;
                 }
-
                 write(sock, MSG_wait, sizeof(char));
                 dostat(sock, direntp->d_name);
             }
@@ -393,20 +401,22 @@ void dostat(int sock, char *filename){
     int filesize;
     char *filesizeMsg[10];
     char *returnMsg[50];
-
+    printf("in dostat %s\n", filename);
+    
     if(stat(filename, &info) == -1){
         printf("Do not stat\n");
     }
     else{           // 디렉토리 안의 내용을 말해주고 디렉토리를 스택에 넣는 부분
         sprintf(command_length, "%d", strlen(filename));
         write(sock, command_length, sizeof(int));
-
         write(sock, filename, strlen(filename));
-
+        
         read(sock, returnMsg, sizeof(char));
         if(strcmp(returnMsg, "1") == 0){
+            printf("Send file %s !! \n", filename);
             //todo
             sync_upload(sock, filename);
+            printf("Done %s\n", filename);
             return;
         }
         else if(strcmp(returnMsg, "2") == 0){
@@ -425,7 +435,8 @@ void dostat(int sock, char *filename){
         //응답에 따라서 파일 전송 혹은 다음라인
         read(sock, returnMsg, sizeof(char));
         if(strcmp(returnMsg, "1") == 0){
-            // todo
+            printf("Send file %s !! \n", filename);
+            //todo
             sync_upload(sock, filename);
             return;
         }
@@ -450,6 +461,7 @@ char* getHead(List *list){
     strcpy(str, now->filename);
     free(now);
 
+    printf("getHead의 반환 스트링이야 %s\n", str);
     return str;
 }
 
@@ -465,11 +477,13 @@ int FindFile(List *list, char *filename){
     Node *now;
 
     if(IsListEmpty(list)){
+        //printf("List is Empty in find file\n");
         return FALSE;
     }
 
     prev = list->head;
     now = list->head;
+
     while(now){
         if( (strcmp(now->filename, filename)) == 0 ){
             if(now == list->head){
@@ -486,6 +500,7 @@ int FindFile(List *list, char *filename){
             now = now->next;
         }
     }
+    //printf("Not Find %s :(\n",filename);
     return FALSE;
 }
 
@@ -494,9 +509,11 @@ void PrintList(List *list){
     now = list->head;
 
     if(IsListEmpty(list)){
+        printf("List is Empty in Print\n");
         return;
     }
     while(now != NULL){
+        printf("Print List :: %s\n", now->filename);
         now = now->next;
     }
 }
@@ -531,11 +548,13 @@ char*   Pop(Stack *stack){
     str = malloc(sizeof(char) * 50);
 
     if(IsEmpty(stack)){
+        printf("Stack is Empty\n");
         return 0;
     }
     else{
         now = stack->top;
         if(strcpy(str, now->filename) == 0){
+            printf("Error occur in strcpy of Stack pop\n");
             return 0;
         }
 
@@ -556,9 +575,6 @@ void    Push(char filename[], Stack *stack){
     temp->next = stack->top;
     stack->top = temp;
 }
-
-
-///=======================================================
 int sync_upload(int fd_socket , char *filename){
     int fd_file;
     int readnum;
@@ -646,7 +662,6 @@ int sync_download(int fd_socket, char* filename){
     return 0;
 
 }
-
 /*
 void error_handling(char *message){
     fputs(message, stderr);
