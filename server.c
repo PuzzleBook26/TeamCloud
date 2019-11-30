@@ -55,7 +55,8 @@ int main(int argc, char** argv){
 	char filename[50];
 	char command[100];
 	char path[100];
-	pid_t pid;
+	char dirname[50];
+    pid_t pid;
 	
 	signal(SIGCHLD, sig_child);
 
@@ -113,6 +114,9 @@ int main(int argc, char** argv){
 			close(listen_socket); // child process에서 listen socket은 close.
 			memset(buf, 0, BUFSIZE);
 			printf("Cloud Sync ...\n");
+
+            //dirname을 상대방에게서 얻어오는 부분
+            read(client_socket, dirname, BUFSIZE);
 
 			while (1) { // Client에서의 명령어 요청 대성기.
 				memset(buf, 0, BUFSIZE);
@@ -173,6 +177,13 @@ int main(int argc, char** argv){
 						printf("remove complete - Client IP :%s \n", inet_ntoa(clnt_addr.sin_addr));
 					}
 				}
+                else if (!strcmp(buf, "push")){
+                    //chdir(root);
+                    sync_recv(client_socket);
+                }
+                else if (!strcmp(buf, "pull")){
+                    sync_send(client_socket, dirname);
+                }
 				else if (!strcmp(buf, "quit")) {
 					printf("Bye !\n");
 					break;

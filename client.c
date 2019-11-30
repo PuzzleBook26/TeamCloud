@@ -22,11 +22,13 @@ char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_client";
 int main(int argc, char** argv){
 	int fd_socket, result, len;
 	struct sockaddr_in serv_addr;
+    char dirname[50];
 
-	if (argc != 3) {
-		printf("Usage : %s <IP> <port> \n", argv[0]);
+	if (argc != 4) {
+		printf("Usage : %s <IP> <port> <dirname>\n", argv[0]);
 		exit(1);
 	}
+    strcpy(dirname, argv[3]);
 
 	// socket() 
 	fd_socket = socket(PF_INET, SOCK_STREAM, 0);
@@ -42,6 +44,9 @@ int main(int argc, char** argv){
 		error_handling("connect() error", "connect");
 
 	printf("Cloud Sync ...\n");
+    
+    //dirname을 상대방에게 알려주는 부분
+    write(fd_socket, dirname, strlen(dirname));
 
 	while (1) {  // client main
 		memset(buf, 0, BUFSIZE);
@@ -84,6 +89,14 @@ int main(int argc, char** argv){
 				printf("경로 이동 실패 - 존재하지 않는 경로입니다.\n");
 			}
 		}
+        else if(!strcmp(buf, "push")){
+            //chdir(root);
+            sync_send(fd_socket, dirname );
+        }
+        else if(!strcmp(buf, "pull")){
+            //chdir
+            sync_recv(fd_socket);
+        }
 		else if(!strcmp(buf, "quit")){
 			printf("서버와의 연결 종료\n");
 			break;

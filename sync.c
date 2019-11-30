@@ -50,7 +50,7 @@ void    FillList(List *);
 int     getSize(char *);
 int     file_rm(int, char*);
 
-void error_handiling(char*);
+//void error_handiling(char*);
 
 const int FALSE = 0;
 const int TRUE = 1;
@@ -647,9 +647,9 @@ int sync_download(int fd_socket, char* filename){
 
 }
 
-
+/*
 void error_handling(char *message){
     fputs(message, stderr);
     fputc('\n', stderr);
     exit(1);
-}
+}*/
