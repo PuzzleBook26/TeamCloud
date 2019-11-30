@@ -7,7 +7,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <dirent.h>
-
+#include <fcntl.h>
 
 #define BUFSIZE 1024
 
@@ -50,6 +50,8 @@ void    FillList(List *);
 int     getSize(char *);
 int     file_rm(int, char*);
 
+void error_handiling(char*);
+
 const int FALSE = 0;
 const int TRUE = 1;
 
@@ -59,10 +61,13 @@ const char* MSG_search = "2";
 const char* MSG_wait   = "3";
 const char* MSG_EXIT   = "4";
 const char* MSG_END    = "5";
+const char* MSG_dir    = "6";
 char* command_length[10];
 
 static int count = 0;  // stack순회를 위해 필요한 부분. 트리의 말단 까지 간 후 올라올떄 사용
 char message[BUFSIZE];
+char buf[BUFSIZE];
+
 Stack stack;
 List list;
 
@@ -113,6 +118,7 @@ void sync_recv(int sock){//, char *username){
                 mkdir(message, 0755);
                 chdir(message);
             }
+            printf("===================%s=================\n", message);
             FillList(&list);
         }
 
@@ -120,17 +126,16 @@ void sync_recv(int sock){//, char *username){
         // 존재한다면 pass, 존재하지 않는다면 파일 전송 요청
         else if( strcmp(message, "2") == 0 ){
             read(sock, message, sizeof(char));
+
             while(strcmp(message, "3") == 0){
-                // 파일의 이름을 읽어옴
+
                 memset(message, 0x00, sizeof(message));
                 read(sock, message, sizeof(int));
-                
+
                 str_len = atoi(message);
                 read(sock, message, str_len);
 
-                // 만약 들어온 파일의 이름이 디렉토리일 경우
-                // case 1번에서 알아서 디렉토리가 생성되기 때문에
-                // list에서 해당디렉토리를 지워주고 다시 상대방의 메세지 대기
+
                 if(is_dir(message) == 1){
                     write(sock, "2", sizeof(char));
                     FindFile(&list, message);
@@ -138,18 +143,22 @@ void sync_recv(int sock){//, char *username){
                     read(sock, message, sizeof(char)); 
                     continue;
                 }
-                // 만약 들어온 파일이 존재하지 않을 경우
-                // 이 부분에서 상대방에게 파일 전송을 요청 함
-                // 이후에 다시 상대방 메세지 대기
-                if(ExitsFile(&list, message, 2) == FALSE){
+
+                strcpy(filename, message);
+                if((FindFile(&list, filename)) == FALSE){
                     write(sock, "1", sizeof(char));
-                    // todo 
+                    // todo
+
+                    printf("%s 다운받기 원해\n", message);
+                    sync_download(sock, message);
+                    FindFile(&list, message);
+
                     memset(message, 0x00, sizeof(message));
                     read(sock, message, sizeof(char)); 
                     continue;
                 }
                 write(sock, "0", sizeof(char));
-                strcpy(filename, message);
+                //strcpy(filename, message);
 
                 // 파일의 크기를 읽는 부분
                 memset(message, 0x00, sizeof(message));
@@ -157,16 +166,15 @@ void sync_recv(int sock){//, char *username){
 
                 str_len = atoi(message);
                 read(sock, message, str_len);
-                // 만약 위에서 파일이 존재한다고 여겨졌지만
-                // 해당 파일과 상대방이 보낸 파일의 크기가 서로 다른경우
-                // 이 경우에는 파일이 업데이트 되었다는 것을 의미하므로
-                // 상대방에게 파일 전송을 요청하게됨
+
                 if(getSize(filename) != atoi(message)){
                     write(sock, "1", sizeof(char));
 
-                    printf("Request : %s for size\n ", filename);
-
                     //todo
+                    printf("%s 파일크기가 안맞아\n", filename);
+
+                    sync_download(sock, filename);
+                    FindFile(&list, filename);
                     memset(message, 0x00, sizeof(message));
                     read(sock, message, sizeof(char));
                     continue;
@@ -262,6 +270,8 @@ void FillList(List *filelist){
     while( (direntp = readdir(dir_ptr)) != NULL ){
         if( ( (strcmp(direntp->d_name, ".")) && (strcmp(direntp->d_name, ".."))  ) == 0)
             continue;
+        //else if(is_dir(direntp->d_name) == TRUE)
+        //    continue;
         else{
             AddList(filelist, direntp->d_name);
         }
@@ -342,7 +352,7 @@ void do_ls(int sock, char dirname[]){
         if( (dir_ptr = opendir(dirname)) == NULL ){
             count --;
             chdir("..");        // 스택 말단까지 간 후 위로 올라가는 부분
-            
+
             write(sock, MSG_chdir, sizeof(char));
             sprintf(command_length, "%d", strlen(updir));
             write(sock, command_length, sizeof(int));
@@ -366,7 +376,9 @@ void do_ls(int sock, char dirname[]){
             else{
                 if(is_dir(direntp->d_name)){
                     Push(direntp->d_name, &stack);
+                    continue;
                 }
+
                 write(sock, MSG_wait, sizeof(char));
                 dostat(sock, direntp->d_name);
             }
@@ -402,6 +414,7 @@ void dostat(int sock, char *filename){
         if(strcmp(returnMsg, "1") == 0){
             printf("Send file %s !! \n", filename);
             //todo
+            sync_upload(sock, filename);
             return;
         }
         else if(strcmp(returnMsg, "2") == 0){
@@ -422,6 +435,7 @@ void dostat(int sock, char *filename){
         if(strcmp(returnMsg, "1") == 0){
             printf("Send file %s !! \n", filename);
             // todo
+            sync_upload(sock, filename);
             return;
         }
     }
@@ -467,12 +481,13 @@ int FindFile(List *list, char *filename){
 
     prev = list->head;
     now = list->head;
-
+    printf("찾기 원하는 파일은 %s\n", filename);
     while(now){
         if( (strcmp(now->filename, filename)) == 0 ){
             if(now == list->head){
                 list->head = now->next; 
             }
+            printf("찾았다!! %s\n", filename);
             prev->next = now->next;
             free(now);
             now = prev->next;
@@ -484,7 +499,7 @@ int FindFile(List *list, char *filename){
             now = now->next;
         }
     }
-    //printf("Not Find %s :(\n",filename);
+    printf("Not Find %s :(\n",filename);
     return FALSE;
 }
 
@@ -560,3 +575,113 @@ void    Push(char filename[], Stack *stack){
     stack->top = temp;
 }
 
+
+///=======================================================
+int sync_upload(int fd_socket , char *filename){
+    int fd_file;
+    int readnum;
+    int size, result= 0;
+
+    struct stat info;
+    memset(buf, 0, BUFSIZE);
+    //prntf("업로드 할 파일 : ");
+    //scanf("%s", filename);
+    //getchar();
+    //size = strlen(filename);
+    //write(fd_socket, &size, sizeof(int));
+    //write(fd_socket, filename, strlen(filename));
+
+    if((fd_file = open(filename, O_RDONLY)) == -1){
+        result = -1;
+        write(fd_socket, &result, sizeof(int));
+        return -1;
+
+    }
+    write(fd_socket, &result, sizeof(int));
+    printf("%s : 업로드 중  ...\n", filename);
+    //stat(filename, &info);
+    //write(fd_socket, &info.st_mode, sizeof(info.st_mode));
+    memset(buf, 0, BUFSIZE);
+
+    while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
+        printf("readnum :: %d\n", readnum);
+        write(fd_socket, &readnum, sizeof(int));
+        if(write(fd_socket, buf, readnum) != readnum){
+            perror("write");
+            return -1;
+        }
+        //    printf(">>>%s\n", buf);
+        memset(buf, 0, BUFSIZE);
+    }
+
+    if(readnum == -1){
+        perror("read");
+        return -1;
+    }
+
+    readnum = 0;
+    write(fd_socket, &readnum, sizeof(int));
+    close(fd_file);
+    printf("%s : 업로드 완료 \n", filename);
+
+    return 0;
+}
+
+
+
+int sync_download(int fd_socket, char* filename){
+    int fd_file;
+    int readnum;
+    int size = 0, result = 0;
+
+    mode_t st_mode;
+    //memset(buf, 0, BUFSIZE);
+    //read(fd_socket, &size, sizeof(int));
+    //read(fd_socket, buf, size);
+    printf("클라이언트 -> 서버 : %s ...\n", filename);
+
+
+
+    read(fd_socket, &result, sizeof(int));
+    if(result == -1)
+        return -1;
+    // read(fd_socket, &st_mode, sizeof(st_mode));
+    if((fd_file = creat(filename, 0644)) == -1){ // client가 업로드할 파일이름을 받아 파일 생성.
+        return -1;
+    }
+    memset(buf, 0, BUFSIZE);
+    while(1){
+        memset(buf, 0, BUFSIZE);
+        read(fd_socket, &size, sizeof(int));
+
+        printf("사이즈 크기는 %d\n",size);
+
+        if(size == 0){
+            break;
+        }
+
+        readnum= read(fd_socket, buf, size);
+
+        if((write(fd_file, buf, readnum)) != readnum){ // client로부터 생성할 파일의 contents를 읽어서 write.
+            perror("write");
+            return -1;
+        }
+        //printf(">>>%s\n",buf);
+
+        if(readnum == -1){
+            perror("read");
+            return -1;
+        }
+    }
+
+    close(fd_file);
+    return 0;
+
+}
+
+
+void error_handling(char *message){
+    fputs(message, stderr);
+    fputc('\n', stderr);
+    exit(1);
+}
