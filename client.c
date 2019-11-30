@@ -177,7 +177,7 @@ int client_upload(int fd_socket){
 
 	while((readnum = read(fd_file, buf, BUFSIZE)) > 0){
 		write(fd_socket, &readnum, sizeof(int));
-		printf("<<size : %d >>\n", readnum);
+		//printf("<<size : %d >>\n", readnum);
 		if(write(fd_socket, buf, readnum) != readnum){
 			perror("write");
 			return -1;
@@ -223,7 +223,7 @@ int client_download(int fd_socket){
 	while(1){
 		memset(buf, 0, BUFSIZE);
 		read(fd_socket, &size, sizeof(int));
-		printf("<<size : %d >>\n", size);
+		//printf("<<size : %d >>\n", size);
 		if(size == 0) break;
 		readnum= read(fd_socket, buf, size);
         	if((write(fd_file, buf, readnum)) != readnum){

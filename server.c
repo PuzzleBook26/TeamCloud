@@ -98,7 +98,9 @@ int main(int argc, char** argv){
 		if (client_socket == -1)
 			error_handling("accept() error");
 		else{
+			printf("\033[1;36m");
 			printf("새로운 클라이언트 연결 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
+			printf("\033[0m");
 		}
 		// 새로운 Client 접속시 fork()를 호출하여 각 Client마다 Child process Server를 만들어준다.
 		// 생성된 Child Server가 각 Client의 접속을 관리하게 된다.
@@ -115,8 +117,10 @@ int main(int argc, char** argv){
 
 			while (1) { // Client에서의 명령어 요청 대성기.
 				memset(buf, 0, BUFSIZE);
+				printf("\033[1;33m");
 				printf("\nwait for command ... \n");
 				read(client_socket, buf, BUFSIZE); // client가 입력한 명령을 받아옴.
+				printf("\033[0m");
 				printf("%s command accepted .\n", buf);
 
 				if (!strcmp(buf, "upload")) {
@@ -180,7 +184,9 @@ int main(int argc, char** argv){
 					printf("Invalid command\n");
 				}
 			}
+			printf("\033[1;36m");
 			printf("클라이언트 연결 해제 - IP : %s, Port : %d\n\n", inet_ntoa(clnt_addr.sin_addr), ntohs(clnt_addr.sin_port));
+			printf("\033[0m");
 			close(client_socket); // server와의 연결 종료
 			exit(0); // child process 종료
 		}
@@ -211,16 +217,14 @@ int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토�
 	if(stat(path, &info) == -1)
 		return -1;
 	if(!(S_ISDIR(info.st_mode))){ // 파일 삭제
-		printf("삭제 요청된 파일 : %s\n", path);
 		unlink(path);
 		return 0;
 	}
-	printf("path :%s\n", path);
+	
 	if((dir_ptr = opendir(path)) == NULL)
 		return -1;
 	else{ 			      
 		while((direntp = readdir(dir_ptr)) != NULL){
-			printf("삭제 요청된 디렉토리 : %s\n", path);
 			
 			if( (!(strcmp(direntp->d_name, "."))) || (!(strcmp(direntp->d_name, "..")))) 
 				continue;
@@ -228,7 +232,7 @@ int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토�
 			sprintf(tmp, "%s/%s", path, direntp->d_name);
 
 			if(stat(tmp, &info) == -1){
-				printf("here ?: %s\n", tmp);
+				
 				return -1;
 			}
 			
@@ -240,7 +244,7 @@ int server_rm(char* path, int fd_socket){ // Cloud server의 파일, 디렉토�
 				continue;
 			}
 		}
-		//chdir("..");
+
 		rmdir(path); // '.', '..'을 제외한 모든 파일이 삭제 되었으므로 디렉토리 삭제.
 		closedir(dir_ptr);
 		return 0;
