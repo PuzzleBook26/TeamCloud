@@ -14,19 +14,18 @@
 typedef struct Node{
     char    filename[100];
     struct Node *next;
-
 }Node;
 
 typedef struct List{
     Node *head;
 
 }List;
+
 typedef struct Stack{
     Node *top;
 }Stack;
 
-//*****//
-
+// 이 코드에서 핵심적인 함수들
 void    sync_send(int, char *);
 void	sync_recv(int);//, char *);
 
@@ -43,11 +42,9 @@ char*   Pop(Stack *);
 void    Push(char[], Stack *);
 
 //for dir system
-ino_t   get_inode(char *);
 void    do_ls(int, char []);
 void    dostat(int, char *);
 int     is_dir(char *);
-void    error_handling(char *message);
 int     ExitsFile(List *, char *, int);
 void    FillList(List *);
 int     getSize(char *);
@@ -69,7 +66,8 @@ char message[BUFSIZE];
 Stack stack;
 List list;
 
-// sync를 맞추기 위해서 자신의 디렉토리 내용을 메세지로 보내는 부
+// sync를 맞추기 위해서 자신의 디렉토리 구조를 DFS순회를 하면서 상대방에게
+// 디렉토리와 파일 구조를 보내주는 부분
 void sync_send(int sock, char *username){
     char *dirname;
 
@@ -91,19 +89,17 @@ void sync_recv(int sock){//, char *username){
     char filename[50];
     char currunt_path[256];
     char path[100];
-    /*
-       if(chdir(username) != 0){
-       mkdir(username, 0755);
-       chdir(username);
-       }*/
 
     while(1) {
-
         // 앞으로 받을 메세지 유형을 읽는 부분
         memset(message, 0x00, sizeof(message));
         read(sock, message, sizeof(char));
 
-        // 디렉토리 이름을 읽어 존재하면 chdir, 없으면 mkdir
+        // 상대방에게 디렉토리 이름을 전달 받은 경우에 동작을 기술
+        // 만약 ..메세지를 받았을 경우 단순히 같이 chdir ..을 수행함
+        // 그 외에 다른 메세지를 받았을 경우 chdir를 시도해 보고 실패할 경우 
+        // 해당 이름의 디렉토리가 없다는 의미이므로, 디렉토리를 만든 후 이동
+        // 후에 이동한 디렉토리 내에 있는 파일들을 전부 list로 넣어줘서 다음 동작을 준비
         if( (strcmp(message, "1")) == 0 ){ 
             read(sock, message, sizeof(int));
             str_len = atoi(message);
@@ -113,33 +109,28 @@ void sync_recv(int sock){//, char *username){
                 chdir("..");
                 continue;
             }
-            //            FillList(&list);
             if(chdir(message) != 0){
                 mkdir(message, 0755);
                 chdir(message);
-
             }
             FillList(&list);
         }
 
-        // 파일이 존재하는지 물어보는 부분
+        // 메세지로 파일의 이름을 받은 경우
         // 존재한다면 pass, 존재하지 않는다면 파일 전송 요청
         else if( strcmp(message, "2") == 0 ){
             read(sock, message, sizeof(char));
-
-            // 곧 파일을 보낼테니 준비하라는 부분
             while(strcmp(message, "3") == 0){
-                // 파일의 이름을 읽는 부분
+                // 파일의 이름을 읽어옴
                 memset(message, 0x00, sizeof(message));
                 read(sock, message, sizeof(int));
-
+                
                 str_len = atoi(message);
                 read(sock, message, str_len);
 
-                //여기에 들어온 input 에 대해서 파일 있는지 확인
-                //만약 파일이 없으면 여기서 한번 메세지 보내서 통신 종료후 파일 요청
-                //FillList(&list);
-                //PrintList(&list);
+                // 만약 들어온 파일의 이름이 디렉토리일 경우
+                // case 1번에서 알아서 디렉토리가 생성되기 때문에
+                // list에서 해당디렉토리를 지워주고 다시 상대방의 메세지 대기
                 if(is_dir(message) == 1){
                     write(sock, "2", sizeof(char));
                     FindFile(&list, message);
@@ -147,7 +138,9 @@ void sync_recv(int sock){//, char *username){
                     read(sock, message, sizeof(char)); 
                     continue;
                 }
-
+                // 만약 들어온 파일이 존재하지 않을 경우
+                // 이 부분에서 상대방에게 파일 전송을 요청 함
+                // 이후에 다시 상대방 메세지 대기
                 if(ExitsFile(&list, message, 2) == FALSE){
                     write(sock, "1", sizeof(char));
                     // todo 
@@ -164,9 +157,10 @@ void sync_recv(int sock){//, char *username){
 
                 str_len = atoi(message);
                 read(sock, message, str_len);
-                //printf("3--search file size :: %s\n", message);
-                //여기에 들어온 size랑 비교해서 값이 업데이트 되었는지 확인
-                //여기서도 메세지 전송해서 비교 후 파일 요청 혹은 다음라인
+                // 만약 위에서 파일이 존재한다고 여겨졌지만
+                // 해당 파일과 상대방이 보낸 파일의 크기가 서로 다른경우
+                // 이 경우에는 파일이 업데이트 되었다는 것을 의미하므로
+                // 상대방에게 파일 전송을 요청하게됨
                 if(getSize(filename) != atoi(message)){
                     write(sock, "1", sizeof(char));
 
@@ -183,7 +177,10 @@ void sync_recv(int sock){//, char *username){
                 memset(message, 0x00, sizeof(message));
                 read(sock, message, sizeof(char));
             }
-            //이 while문 밖에서 case2번의 경우 선택되지 않은 파일들 모두 삭제
+            // 만약 지금까리 리스트에 남아있는 내용이 있다는 의미는
+            // 나에게는 존재하지만 상대방에게는 존재하지 않는 내용이므로
+            // 서로 동기화를 위해 삭제해야함
+            // 따라서 이 부분에는 리스트에 남아있는 내용을 하나씩 꺼내오면서 삭제하게됨
             while(list.head){
                 realpath(".", currunt_path);
                 getcwd(path, 100);
@@ -192,23 +189,17 @@ void sync_recv(int sock){//, char *username){
                 file_rm(sock, path);
                 chdir(currunt_path);
             }
+            //상대방의 통신 종료 메세지를 받고 통신이 종료되는 부분
         }else if( strcmp(message, "5") == 0 ){
             printf("통신 is over!! \n");
             break;
         }
         continue;
-
-
     }
-
 }
 
-void error_handling(char *message){
-    fputs(message, stderr);
-    fputc('\n', stderr);
-    exit(1);
-}
 
+// 파일이름을 받아서 재귀적으로 파일을 삭제하는 함수
 int file_rm(int sock, char *filename){
 
     struct stat info;
@@ -219,9 +210,8 @@ int file_rm(int sock, char *filename){
         return -1;
 
     if(!(S_ISDIR(info.st_mode))){ // 파일 삭제
-        //printf("삭제 요청된 파일 : %s\n", filename);
         if( unlink(filename) != 0)
-            printf("%s 삭제 오류!!!!!!!!!!!!!!!!\n", filename);
+            printf("%s 삭제 오류\n", filename);
         return 0;
     }
 
@@ -256,6 +246,7 @@ int file_rm(int sock, char *filename){
 
 }
 
+// 현제 디렉토리의 파일과 디렉토리 이름을 list에 채우는 함수
 void FillList(List *filelist){
     DIR             *dir_ptr;
     struct  dirent  *direntp;
@@ -276,34 +267,31 @@ void FillList(List *filelist){
         }
     }
     closedir(dir_ptr);
-
-
 }
 
-//mode 1 :: chdir
-//mode 2 :: open dir
+
+// mode 1 :: 디렉토리가 존재하는지 찾는 함수
+// mode 2 :: 파일이 존재하는지 찾는 함수
+// list에 해당 파일이 존재하는지 찾아보는 함수
+//
 int ExitsFile(List *list, char *filename, int mode){
     int result;
 
     if(mode == 1){  // dir
         if(FindFile(&list, filename)){
-            printf("===============chang dir  %s=============\n", filename);
             chdir(filename);
         }
         else{
             if(mkdir(filename, 0755) == 0){
                 chdir(filename);
-                printf("Complete mkdir %s +++++++++++++++++\n\n", filename);
             }
             else{
-                printf("????   %s mkdir error in ExitsFile\n", filename);
                 return FALSE;
             }
         }
     }
     else if(mode == 2){  // file
         if(FindFile(&list, filename)){
-            printf("%s 파일이 리스트 안에 있었어! \n", filename);
             return TRUE;
         }
         else{
@@ -311,20 +299,20 @@ int ExitsFile(List *list, char *filename, int mode){
         }
     }
     return TRUE;
-
 }
 
+
+// 파일 이름을 매개변수로 받아서 파일의 크기를 반환해주는 함수
 int getSize(char *filename){
     struct stat info;
     if(stat(filename, &info) == -1){
         printf("Error in getSize\n");
         exit(1);
     }
-
     return info.st_size;
 }
 
-// input string이 dir인지 확인하는 함수.
+// input string이 디렉토리인지 확인하는 함수.
 // dir이면 TRUE(1), 아니면 FALSE(0)
 int is_dir(char *filename){
     int mode;
@@ -342,9 +330,8 @@ int is_dir(char *filename){
     }
 }
 
-// dir인 input string으로 chdir 한 이후 그 디렉토리를 open (opendir and readdir)
-// 이후 그 디렉토리 내부의 값들을 하나씩 읽어옴
-// 사용 시스템콜 :: opendir,  readdir,  closedir
+// 입력으로 들어온 디렉토리를 열어서 해당 디렉토리 안에 있는 요소들의 이름을
+// 하나하나 상대방에게 전달해주는 함수
 void do_ls(int sock, char dirname[]){
     DIR             *dir_ptr;
     struct  dirent  *direntp;
@@ -355,10 +342,8 @@ void do_ls(int sock, char dirname[]){
         if( (dir_ptr = opendir(dirname)) == NULL ){
             count --;
             chdir("..");        // 스택 말단까지 간 후 위로 올라가는 부분
-            // printf(" change dir to .. \n");
-
+            
             write(sock, MSG_chdir, sizeof(char));
-
             sprintf(command_length, "%d", strlen(updir));
             write(sock, command_length, sizeof(int));
             write(sock, "..", sizeof(".."));
@@ -368,12 +353,6 @@ void do_ls(int sock, char dirname[]){
     }
 
     if(count != 0){
-        //디렉토리 이동 후
-        //이동하라는 명령과 함께 이동할 디렉토리 이름 전송
-        //chdir(dirname);
-        //printf("change dir to %s\n", dirname);
-
-        //명령어 처리모드 > 파일이름사이즈 > 파일이름
         write(sock, MSG_chdir, sizeof(char));
         sprintf(command_length, "%d", strlen(dirname));
         write(sock, command_length, sizeof(int));
@@ -387,7 +366,6 @@ void do_ls(int sock, char dirname[]){
             else{
                 if(is_dir(direntp->d_name)){
                     Push(direntp->d_name, &stack);
-                    //            continue;
                 }
                 write(sock, MSG_wait, sizeof(char));
                 dostat(sock, direntp->d_name);
@@ -430,7 +408,6 @@ void dostat(int sock, char *filename){
             return;
         }
 
-
         filesize = info.st_size;
         sprintf(filesizeMsg, "%d", filesize);
 
@@ -449,19 +426,6 @@ void dostat(int sock, char *filename){
         }
     }
 }
-
-// input string에 대한 inode를 읽어오는 부분.
-// 현재는 미사용
-ino_t get_inode(char *filename){
-    struct stat info;
-    if(stat(filename, &info) == -1){
-        fprintf(stderr, "Cannot stat");
-        perror(filename);
-        exit(1);
-    }
-    return info.st_ino;
-}
-
 
 /*=================================data structure ========================*/
 
