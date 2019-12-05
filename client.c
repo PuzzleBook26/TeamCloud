@@ -25,7 +25,8 @@ char *root = "/home/kyj0609/바탕화면/";
 int main(int argc, char** argv){
 	int fd_socket, result, len;
 	struct sockaddr_in serv_addr;
-    char dirname[50];
+    	char dirname[50];
+	char initpath[100]; 
 
 	if (argc != 4) {
 		printf("Usage : %s <IP> <port> <dirname>\n", argv[0]);
@@ -50,7 +51,6 @@ int main(int argc, char** argv){
     
     	//dirname을 상대방에게 알려주는 부분
         write(fd_socket, dirname, strlen(dirname));
-        chdir(root);
 	while(1){
 		printf("\033[1;32;99m");
 		memset(buf, 0, BUFSIZE);
@@ -78,7 +78,9 @@ int main(int argc, char** argv){
 		    printf("잘못된 동기화 명령어 입력\n");
 		}
 	}
-
+	strcpy(initpath, root);
+	strcat(initpath, dirname);
+        chdir(initpath);
 	while (1) {  // client main
 		memset(buf, 0, BUFSIZE);
 		printf("\033[1;32;99m");
@@ -101,13 +103,15 @@ int main(int argc, char** argv){
 
 		}
 		else if(!strcmp(buf, "pwd")){
+			memset(buf, 0, BUFSIZE);
 			read(fd_socket, buf, BUFSIZE);
-			printf("----------현재 서버 작업 경로----------\n %s\n", buf);
+			printf("----------현재 서버 작업 경로----------\n%s\n", buf);
 			printf("-------------------------------------\n");
 		}
 		else if(!strcmp(buf, "mypwd")){
+			memset(buf, 0, BUFSIZE);
 			getcwd(buf,BUFSIZE);
-			printf("----------현재 클라이언트 작업 경로----------\n %s\n", buf);
+			printf("----------현재 클라이언트 작업 경로----------\n%s\n", buf);
 			printf("------------------------------------------\n");
 				
 		}
