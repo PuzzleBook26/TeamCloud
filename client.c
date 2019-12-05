@@ -19,7 +19,7 @@ int client_ls(int);
 int client_rm(int);
 void error_handling(char*, char*);
 char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_client";
-char *root = "/home/kyj0609/바탕화면/";
+char *root = "/home/puzzlebook/TEST_CLIENT/";
 
 
 int main(int argc, char** argv){
@@ -78,9 +78,8 @@ int main(int argc, char** argv){
 		    printf("잘못된 동기화 명령어 입력\n");
 		}
 	}
-	strcpy(initpath, root);
-	strcat(initpath, dirname);
-        chdir(initpath);
+	
+        chdir(root);
 	while (1) {  // client main
 		memset(buf, 0, BUFSIZE);
 		printf("\033[1;32;99m");
@@ -116,11 +115,13 @@ int main(int argc, char** argv){
 				
 		}
 		else if(!strcmp(buf, "ls")){
+			memset(buf, 0, BUFSIZE);
 			if((result = client_ls(fd_socket)) == -1){
 				printf("ls error\n");
 			}
 		}
 		else if(!strcmp(buf, "myls")){
+			memset(buf, 0, BUFSIZE);
 			if((result = client_myls()) == -1){
 				printf("myls error\n");
 			}

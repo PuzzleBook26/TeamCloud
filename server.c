@@ -19,7 +19,7 @@
 #define BUFSIZE 1024
 #define BACKLOG 10
 char cur_path[100] = "/home/kyj0609/sysprac/TeamCloud/cloud_server/";
-char *root = "/home/kyj0609/바탕화면/server/";
+char *root = "/home/puzzlebook/TEST_SERVER";
 
 char buf[BUFSIZE];
 void error_handling(char *message);
@@ -147,7 +147,7 @@ int main(int argc, char** argv){
 					printf("Invalid command\n");
 				}
 			}
-
+			chdir(root);
 			while (1) { // Client에서의 명령어 요청 대성기.
 
                			memset(buf, 0, BUFSIZE);
